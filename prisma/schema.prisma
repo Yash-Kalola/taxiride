@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id                   String    @id @default(cuid())
+  accountId            String    @unique
+  companyName          String
+  address              String    @default("")
+  poNumber             String    @default("")
+  expectedMonthlyRides Int       @default(0)
+  email                String    @default("")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  rides                Ride[]
+  invoices             Invoice[]
+}
+
+model Ride {
+  id              String    @id @default(cuid())
+  jobId           String    @default("")
+  vehicleNumber   String    @default("")
+  pickupLocation  String    @default("")
+  dropoffLocation String    @default("")
+  passenger       String    @default("")
+  driver          String    @default("")
+  dateTime        String    @default("")
+  amount          Float     @default(0)
+  month           String
+  year            Int
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoiceId       String?
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  createdAt       DateTime  @default(now())
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber Int           @unique
+  companyId     String
+  company       Company       @relation(fields: [companyId], references: [id])
+  month         String
+  year          Int
+  amountPreTax  Float
+  hst           Float
+  total         Float
+  notes         String        @default("")
+  dateSent      String        @default("")
+  dueDate       String        @default("")
+  status        InvoiceStatus @default(DRAFT)
+  verified      Boolean       @default(false)
+  flagged       Boolean       @default(false)
+  rides         Ride[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+}

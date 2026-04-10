@@ -1,0 +1,130 @@
+import { prisma } from '@/lib/db';
+import { formatCurrency } from '@/lib/tax';
+import PageHeader from '@/components/ui/PageHeader';
+import Link from 'next/link';
+
+export const dynamic = 'force-dynamic';
+
+export default async function DashboardPage() {
+  let stats = { total: 0, paid: 0, pending: 0, draft: 0, invoiceCount: 0 };
+  let recentInvoices: any[] = [];
+  let companiesCount = 0;
+  let ridesCount = 0;
+  let dbConnected = true;
+
+  try {
+    const [invoices, companies, rides] = await Promise.all([
+      prisma.invoice.findMany({ include: { company: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' }, take: 5 }),
+      prisma.company.count(),
+      prisma.ride.count(),
+    ]);
+    recentInvoices = invoices;
+    companiesCount = companies;
+    ridesCount = rides;
+
+    const all = await prisma.invoice.findMany();
+    stats = {
+      total:        all.reduce((s, i) => s + i.total, 0),
+      paid:         all.filter((i) => i.status === 'PAID').reduce((s, i) => s + i.total, 0),
+      pending:      all.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
+      draft:        all.filter((i) => i.status === 'DRAFT').reduce((s, i) => s + i.total, 0),
+      invoiceCount: all.length,
+    };
+  } catch {
+    dbConnected = false;
+  }
+
+  return (
+    <div className="px-8 py-8 space-y-8">
+      <PageHeader title="Dashboard" description="Overview of your invoice activity" />
+
+      {!dbConnected && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+          <strong>Database not connected.</strong> Add <code className="font-mono bg-amber-100 px-1 rounded">DATABASE_URL</code> to <code className="font-mono bg-amber-100 px-1 rounded">.env.local</code> and run <code className="font-mono bg-amber-100 px-1 rounded">npx prisma migrate dev</code>.
+        </div>
+      )}
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {[
+          { label: 'Total Invoiced',  value: stats.total,   count: stats.invoiceCount, color: 'from-indigo-500 to-indigo-600' },
+          { label: 'Received',        value: stats.paid,    count: null,               color: 'from-emerald-500 to-emerald-600' },
+          { label: 'Pending',         value: stats.pending, count: null,               color: 'from-amber-500 to-amber-600' },
+          { label: 'Drafts',          value: stats.draft,   count: null,               color: 'from-slate-400 to-slate-500' },
+        ].map((card) => (
+          <div key={card.label} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{card.label}</p>
+            <p className="mt-2 text-3xl font-bold text-gray-900">{formatCurrency(card.value)}</p>
+            {card.count !== null && (
+              <p className="mt-1 text-xs text-gray-500">{card.count} invoice{card.count !== 1 ? 's' : ''}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Quick stats row */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50">
+            <svg className="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{companiesCount}</p>
+            <p className="text-sm text-gray-500">Companies</p>
+          </div>
+          <Link href="/companies" className="ml-auto text-sm font-medium text-indigo-600 hover:text-indigo-700">View →</Link>
+        </div>
+        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50">
+            <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{ridesCount}</p>
+            <p className="text-sm text-gray-500">Total Rides</p>
+          </div>
+          <Link href="/rides" className="ml-auto text-sm font-medium text-indigo-600 hover:text-indigo-700">View →</Link>
+        </div>
+      </div>
+
+      {/* Recent invoices */}
+      {recentInvoices.length > 0 && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">Recent Invoices</h2>
+            <Link href="/invoices" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">View all →</Link>
+          </div>
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                {['Invoice #', 'Company', 'Month', 'Total', 'Status'].map((h) => (
+                  <th key={h} className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {recentInvoices.map((inv) => (
+                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-3.5 font-mono text-sm font-medium text-gray-900">#{inv.invoiceNumber}</td>
+                  <td className="px-6 py-3.5 text-sm text-gray-700">{inv.company.companyName}</td>
+                  <td className="px-6 py-3.5 text-sm text-gray-500">{inv.month} {inv.year}</td>
+                  <td className="px-6 py-3.5 text-sm font-medium text-gray-900">{formatCurrency(inv.total)}</td>
+                  <td className="px-6 py-3.5">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      inv.status === 'PAID'    ? 'bg-emerald-50 text-emerald-700' :
+                      inv.status === 'PENDING' ? 'bg-amber-50 text-amber-700'    :
+                                                 'bg-slate-100 text-slate-600'
+                    }`}>{inv.status.charAt(0) + inv.status.slice(1).toLowerCase()}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
