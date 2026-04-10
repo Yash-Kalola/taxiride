@@ -396,22 +396,57 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           <Button variant="ghost" onClick={() => setWizard((w) => ({ ...w, step: 'upload' }))}>← Back</Button>
         </div>
 
-        {/* Unmatched warnings */}
-        {wizard.unmatched.length > 0 && (
+        {/* All-unmatched empty state */}
+        {wizard.groups.length === 0 && wizard.unmatched.length > 0 && (
+          <div className="rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50 px-8 py-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+              <svg className="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            </div>
+            <h3 className="text-base font-semibold text-amber-900">No companies matched</h3>
+            <p className="mt-2 text-sm text-amber-700 max-w-md mx-auto">
+              None of the Account IDs in this file exist in your Companies database.
+              You need to add each company with its exact Account ID from TaxiCaller before importing.
+            </p>
+            <div className="mt-4 rounded-lg bg-white/70 px-4 py-3 text-left inline-block min-w-[280px]">
+              <p className="text-xs font-semibold text-amber-800 mb-2">Account IDs found in this file:</p>
+              <div className="space-y-1">
+                {wizard.unmatched.map((u) => (
+                  <div key={u.accountId} className="flex items-center justify-between gap-4 text-xs">
+                    <span className="font-mono text-gray-700">{u.accountId}</span>
+                    <span className="text-gray-400">{u.rowCount} ride{u.rowCount !== 1 ? 's' : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-center gap-3">
+              <Link href="/companies">
+                <Button variant="primary">Go to Companies →</Button>
+              </Link>
+              <Button variant="secondary" onClick={() => setWizard((w) => ({ ...w, step: 'upload' }))}>← Upload Different File</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Partial-unmatched warnings (some matched, some not) */}
+        {wizard.groups.length > 0 && wizard.unmatched.length > 0 && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 space-y-1">
             <p className="text-sm font-semibold text-amber-800">
-              {wizard.unmatched.length} unmatched Account ID{wizard.unmatched.length > 1 ? 's' : ''} — rows excluded
+              {wizard.unmatched.length} Account ID{wizard.unmatched.length > 1 ? 's' : ''} not found in Companies — rows excluded
             </p>
             {wizard.unmatched.map((u) => (
               <p key={u.accountId} className="text-xs text-amber-700">
-                <span className="font-mono">{u.accountId}</span> ({u.rowCount} row{u.rowCount > 1 ? 's' : ''}) — not found in Companies.{' '}
-                <Link href="/companies" className="underline">Add it →</Link>
+                <span className="font-mono font-medium">{u.accountId}</span>{' '}
+                ({u.rowCount} row{u.rowCount > 1 ? 's' : ''}) —{' '}
+                <Link href="/companies" className="underline hover:text-amber-900">Add it in Companies →</Link>
               </p>
             ))}
           </div>
         )}
 
-        {/* Controls */}
+        {/* Controls — only shown when there are matched groups */}
+        {wizard.groups.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <Select
             value={wizard.month}
@@ -432,8 +467,10 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
             <Button size="sm" variant="ghost" onClick={() => selectAll(false)}>Deselect All</Button>
           </div>
         </div>
+        )}
 
         {/* Company groups */}
+        {wizard.groups.length > 0 && (
         <div className="space-y-3">
           {wizard.groups.map((group) => {
             const subtotal    = group.rows.reduce((s, r) => s + r.amount, 0);
@@ -519,7 +556,10 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           })}
         </div>
 
-        {/* Grand total + submit */}
+        )} {/* end wizard.groups.length > 0 groups list */}
+
+        {/* Grand total + submit — only when there are matched groups */}
+        {wizard.groups.length > 0 && (
         <div className="rounded-2xl bg-white px-6 py-4 shadow-sm ring-1 ring-gray-200 flex items-center justify-between">
           <div>
             <p className="text-xs text-gray-500">
@@ -542,6 +582,7 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
             </Button>
           </div>
         </div>
+        )} {/* end wizard.groups.length > 0 grand total */}
       </div>
     );
   }
