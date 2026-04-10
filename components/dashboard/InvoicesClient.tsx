@@ -32,6 +32,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
   const [filterMonth,   setFilterMonth] = useState('');
   const [filterStatus,  setFilterStatus]= useState('');
   const [filterCompany, setFilterComp]  = useState('');
+  const [filterFlagged, setFilterFlagged] = useState('');
   const [showGenerate,  setShowGenerate]= useState(false);
   const [genForm, setGenForm]           = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear() });
   const [generating,    setGenerating]  = useState(false);
@@ -42,6 +43,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
     if (filterMonth   && inv.month     !== filterMonth)   return false;
     if (filterCompany && inv.companyId !== filterCompany) return false;
     if (filterStatus  && inv.status    !== filterStatus)  return false;
+    if (filterFlagged === 'yes' && !(inv.flagged && !inv.verified)) return false;
     return true;
   });
 
@@ -115,6 +117,10 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
             <option value="DRAFT">Draft</option>
             <option value="PENDING">Pending</option>
             <option value="PAID">Paid</option>
+          </Select>
+          <Select value={filterFlagged} onChange={(e) => setFilterFlagged(e.target.value)} className="w-36">
+            <option value="">All Invoices</option>
+            <option value="yes">Flagged Only</option>
           </Select>
         </div>
 

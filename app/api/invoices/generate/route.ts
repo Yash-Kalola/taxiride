@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
         amountPreTax: base,
         hst,
         total: grandTotal,
-        dateSent:  format(today, 'yyyy-MM-dd'),
         dueDate:   format(addDays(today, 30), 'yyyy-MM-dd'),
         status:    'DRAFT',
         flagged,

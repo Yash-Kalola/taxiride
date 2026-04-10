@@ -13,18 +13,19 @@ interface Ride {
   id: string; companyId: string; month: string; year: number;
   jobId: string; vehicleNumber: string; pickupLocation: string;
   dropoffLocation: string; passenger: string; driver: string;
-  dateTime: string; amount: number;
+  dateTime: string; amount: number; invoiceId: string | null;
   company: { companyName: string; accountId: string };
 }
 
 const EMPTY_RIDE = { companyId: '', month: '', year: new Date().getFullYear(), jobId: '', vehicleNumber: '', pickupLocation: '', dropoffLocation: '', passenger: '', driver: '', dateTime: '', amount: 0 };
 
 export default function RidesClient({ initialRides, companies }: { initialRides: Ride[]; companies: Company[] }) {
-  const [rides, setRides]       = useState<Ride[]>(initialRides);
-  const [modal, setModal]       = useState<'add' | 'import' | null>(null);
-  const [form, setForm]         = useState({ ...EMPTY_RIDE });
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState('');
+  const [rides, setRides]           = useState<Ride[]>(initialRides);
+  const [modal, setModal]           = useState<'add' | 'import' | null>(null);
+  const [editingRide, setEditingRide] = useState<Ride | null>(null);
+  const [form, setForm]             = useState({ ...EMPTY_RIDE });
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState('');
   const [importForm, setImportForm] = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear() });
   const [importResult, setImportResult] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -50,19 +51,50 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
   async function saveRide() {
     setSaving(true); setError('');
     try {
-      const res = await fetch('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? 'Failed'); return; }
-      const co = companies.find((c) => c.id === form.companyId);
-      setRides((prev) => [{ ...data, company: { companyName: co?.companyName ?? '', accountId: co?.accountId ?? '' } }, ...prev]);
-      setModal(null);
+      if (editingRide) {
+        // Edit existing ride
+        const res = await fetch(`/api/rides/${editingRide.id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: form.jobId, vehicleNumber: form.vehicleNumber,
+            pickupLocation: form.pickupLocation, dropoffLocation: form.dropoffLocation,
+            passenger: form.passenger, driver: form.driver,
+            dateTime: form.dateTime, amount: form.amount,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setError(data.error ?? 'Failed'); return; }
+        setRides((prev) => prev.map((r) => r.id === editingRide.id ? { ...r, ...data } : r));
+      } else {
+        // Add new ride
+        const res = await fetch('/api/rides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+        const data = await res.json();
+        if (!res.ok) { setError(data.error ?? 'Failed'); return; }
+        const co = companies.find((c) => c.id === form.companyId);
+        setRides((prev) => [{ ...data, invoiceId: null, company: { companyName: co?.companyName ?? '', accountId: co?.accountId ?? '' } }, ...prev]);
+      }
+      setModal(null); setEditingRide(null);
     } catch { setError('Network error'); }
     finally { setSaving(false); }
   }
 
+  function openEditRide(ride: Ride) {
+    setEditingRide(ride);
+    setForm({
+      companyId: ride.companyId, month: ride.month, year: ride.year,
+      jobId: ride.jobId, vehicleNumber: ride.vehicleNumber,
+      pickupLocation: ride.pickupLocation, dropoffLocation: ride.dropoffLocation,
+      passenger: ride.passenger, driver: ride.driver,
+      dateTime: ride.dateTime, amount: ride.amount,
+    });
+    setError('');
+    setModal('add');
+  }
+
   async function deleteRide(id: string) {
     if (!confirm('Delete this ride?')) return;
-    await fetch(`/api/rides/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/rides/${id}`, { method: 'DELETE' });
+    if (!res.ok) { alert('Delete failed — please try again.'); return; }
     setRides((prev) => prev.filter((r) => r.id !== id));
   }
 
@@ -80,7 +112,7 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
       const rawRows: any[] = utils.sheet_to_json(ws, { defval: '' });
 
       // Map columns: try common header names
-      const rows = rawRows.map((row) => ({
+      const allMapped = rawRows.map((row) => ({
         jobId:           String(row['Job ID'] ?? row['JobID'] ?? row['job_id'] ?? ''),
         vehicleNumber:   String(row['Vehicle #'] ?? row['Vehicle'] ?? row['Cab #'] ?? row['vehicleNumber'] ?? ''),
         pickupLocation:  String(row['Pickup'] ?? row['Pickup Location'] ?? row['pickupLocation'] ?? ''),
@@ -89,7 +121,9 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
         driver:          String(row['Driver']    ?? row['driver']    ?? ''),
         dateTime:        String(row['Date/Time'] ?? row['Date'] ?? row['dateTime'] ?? ''),
         amount:          parseFloat(String(row['Amount'] ?? row['amount'] ?? '0')) || 0,
-      })).filter((r) => r.amount > 0);
+      }));
+      const rows = allMapped.filter((r) => r.amount > 0);
+      const skipped = allMapped.length - rows.length;
 
       if (rows.length === 0) { setError('No valid rows found. Check column headers.'); return; }
 
@@ -101,7 +135,8 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Import failed'); return; }
 
-      setImportResult(`Successfully imported ${data.imported} rides.`);
+      const skippedMsg = skipped > 0 ? ` (${skipped} row${skipped > 1 ? 's' : ''} skipped — zero amount)` : '.';
+      setImportResult(`Successfully imported ${data.imported} ride${data.imported !== 1 ? 's' : ''}${skippedMsg}`);
       // Refresh rides
       const updated = await fetch(`/api/rides?companyId=${importForm.companyId}&month=${importForm.month}&year=${importForm.year}`).then((r) => r.json());
       setRides((prev) => [...updated.filter((r: Ride) => !prev.some((p) => p.id === r.id)), ...prev]);
@@ -114,11 +149,11 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
       <div className="space-y-6">
         <PageHeader
           title="Rides"
-          description={`${rides.length} rides total`}
+          description={filtered.length < rides.length ? `Showing ${filtered.length} of ${rides.length} rides` : `${rides.length} rides total`}
           action={
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => { setImportResult(null); setError(''); setModal('import'); }}>Import Excel / CSV</Button>
-              <Button variant="primary" onClick={() => { setForm({ ...EMPTY_RIDE }); setError(''); setModal('add'); }}>+ Add Ride</Button>
+              <Button variant="primary" onClick={() => { setEditingRide(null); setForm({ ...EMPTY_RIDE }); setError(''); setModal('add'); }}>+ Add Ride</Button>
             </div>
           }
         />
@@ -145,7 +180,7 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date/Time', 'Company', 'Month', 'Pickup', 'Dropoff', 'Cab #', 'Amount', ''].map((h) => (
+                  {['Date/Time', 'Company', 'Month', 'Pickup', 'Dropoff', 'Cab #', 'Amount', 'Status', ''].map((h) => (
                     <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -161,7 +196,16 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
                     <td className="px-4 py-3.5 text-sm text-gray-600 font-mono">{r.vehicleNumber || '—'}</td>
                     <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(r.amount)}</td>
                     <td className="px-4 py-3.5">
-                      <Button size="sm" variant="ghost" onClick={() => deleteRide(r.id)} className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
+                      {r.invoiceId
+                        ? <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Invoiced</span>
+                        : <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Uninvoiced</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                        <Button size="sm" variant="ghost" onClick={() => openEditRide(r)} className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50">Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteRide(r.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -171,24 +215,27 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
         )}
       </div>
 
-      {/* Add Ride Modal */}
-      <Modal open={modal === 'add'} onClose={() => setModal(null)} title="Add Ride" size="lg">
+      {/* Add / Edit Ride Modal */}
+      <Modal open={modal === 'add'} onClose={() => { setModal(null); setEditingRide(null); }} title={editingRide ? 'Edit Ride' : 'Add Ride'} size="lg">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <Select label="Company" {...field('companyId')}>
+              <Select label="Company" {...field('companyId')} disabled={!!editingRide}>
                 <option value="">Select company…</option>
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
               </Select>
             </div>
-            <Select label="Month" {...field('month')}>
+            <Select label="Month" {...field('month')} disabled={!!editingRide}>
               <option value="">Select month…</option>
               {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
             </Select>
-            <Select label="Year" {...field('year')}>
+            <Select label="Year" {...field('year')} disabled={!!editingRide}>
               {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
             </Select>
           </div>
+          {editingRide && (
+            <p className="text-xs text-gray-400 -mt-2">Company, month, and year cannot be changed after a ride is created.</p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Date / Time" placeholder="2025-01-15 14:30" {...field('dateTime')} />
             <Input label="Job ID" placeholder="JOB-001" {...field('jobId')} />
@@ -205,8 +252,10 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
           <Input label="Amount ($, tax-inclusive)" type="number" step="0.01" min="0" {...field('amount')} />
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>
-            <Button variant="primary" onClick={saveRide} disabled={saving || !form.companyId || !form.month}>{saving ? 'Saving…' : 'Add Ride'}</Button>
+            <Button variant="ghost" onClick={() => { setModal(null); setEditingRide(null); }}>Cancel</Button>
+            <Button variant="primary" onClick={saveRide} disabled={saving || !form.companyId || !form.month}>
+              {saving ? 'Saving…' : editingRide ? 'Save Changes' : 'Add Ride'}
+            </Button>
           </div>
         </div>
       </Modal>

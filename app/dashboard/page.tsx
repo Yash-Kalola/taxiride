@@ -13,22 +13,21 @@ export default async function DashboardPage() {
   let dbConnected = true;
 
   try {
-    const [invoices, companies, rides] = await Promise.all([
-      prisma.invoice.findMany({ include: { company: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' }, take: 5 }),
+    const [allInvoices, companies, rides] = await Promise.all([
+      prisma.invoice.findMany({ include: { company: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' } }),
       prisma.company.count(),
       prisma.ride.count(),
     ]);
-    recentInvoices = invoices;
+    recentInvoices = allInvoices.slice(0, 5);
     companiesCount = companies;
     ridesCount = rides;
 
-    const all = await prisma.invoice.findMany();
     stats = {
-      total:        all.reduce((s, i) => s + i.total, 0),
-      paid:         all.filter((i) => i.status === 'PAID').reduce((s, i) => s + i.total, 0),
-      pending:      all.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
-      draft:        all.filter((i) => i.status === 'DRAFT').reduce((s, i) => s + i.total, 0),
-      invoiceCount: all.length,
+      total:        allInvoices.reduce((s, i) => s + i.total, 0),
+      paid:         allInvoices.filter((i) => i.status === 'PAID').reduce((s, i) => s + i.total, 0),
+      pending:      allInvoices.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
+      draft:        allInvoices.filter((i) => i.status === 'DRAFT').reduce((s, i) => s + i.total, 0),
+      invoiceCount: allInvoices.length,
     };
   } catch {
     dbConnected = false;

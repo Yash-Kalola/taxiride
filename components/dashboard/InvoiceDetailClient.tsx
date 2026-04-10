@@ -74,7 +74,20 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
           {invoice.status !== 'PAID' && (
             <>
               {invoice.status === 'DRAFT' && (
-                <Button variant="primary" onClick={send} disabled={sending}>{sending ? 'Sending…' : 'Send Invoice'}</Button>
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    variant={invoice.company.email ? 'primary' : 'secondary'}
+                    onClick={send}
+                    disabled={sending}
+                  >
+                    {sending ? 'Sending…' : 'Send Invoice'}
+                  </Button>
+                  {!invoice.company.email && (
+                    <p className="text-xs text-amber-600 max-w-[220px] text-right">
+                      No email on file — invoice will be marked Sent but not emailed.
+                    </p>
+                  )}
+                </div>
               )}
               {invoice.status === 'PENDING' && (
                 <Button variant="primary" onClick={markPaid} className="bg-emerald-600 hover:bg-emerald-700">Mark as Paid</Button>

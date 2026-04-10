@@ -10,7 +10,13 @@ export default async function RidesPage() {
     [companies, rides] = await Promise.all([
       prisma.company.findMany({ orderBy: { companyName: 'asc' } }),
       prisma.ride.findMany({
-        include: { company: { select: { companyName: true, accountId: true } } },
+        select: {
+          id: true, companyId: true, month: true, year: true,
+          jobId: true, vehicleNumber: true, pickupLocation: true,
+          dropoffLocation: true, passenger: true, driver: true,
+          dateTime: true, amount: true, invoiceId: true,
+          company: { select: { companyName: true, accountId: true } },
+        },
         orderBy: { createdAt: 'desc' },
         take: 200,
       }),
