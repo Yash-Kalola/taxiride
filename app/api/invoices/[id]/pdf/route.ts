@@ -17,7 +17,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       invoice as Invoice
     );
 
-    return new Response(pdfBuffer, {
+    return new Response(pdfBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="Invoice-${invoice.invoiceNumber}.pdf"`,
