@@ -41,6 +41,15 @@ const NAV = [
     ),
   },
   {
+    href: '/overview',
+    label: 'Overview',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+      </svg>
+    ),
+  },
+  {
     href: '/import',
     label: 'Import',
     icon: (
@@ -57,14 +66,15 @@ export default function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-slate-900">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-3 border-b border-slate-800 px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-          <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-white leading-tight">TaxiRide</p>
+      <div className="flex h-20 items-center border-b border-slate-800 px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo.png"
+          alt="Vets Taxi & Dispatch Service Inc."
+          className="h-12 w-auto object-contain"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+        <div className="ml-2">
           <p className="text-xs text-slate-400 leading-tight">Invoice System</p>
         </div>
       </div>

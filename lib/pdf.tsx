@@ -1,15 +1,31 @@
 // SERVER-SIDE ONLY — never import from client components
-import { Document, Page, Text, View, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 import { format } from 'date-fns';
+import * as fs from 'fs';
+import * as path from 'path';
 import { formatCurrency } from './tax';
 import { SENDER } from './constants';
 import type { Company, Invoice, Ride } from '@prisma/client';
+
+// Load logo once at module level — graceful fallback if not present
+function loadLogoBase64(): string | null {
+  try {
+    const logoPath = path.join(process.cwd(), 'public', 'logo.png');
+    const buf = fs.readFileSync(logoPath);
+    return `data:image/png;base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+const LOGO_SRC = loadLogoBase64();
 
 const styles = StyleSheet.create({
   page:             { fontFamily: 'Helvetica', fontSize: 10, padding: 44, color: '#111827', backgroundColor: '#ffffff' },
   bold:             { fontFamily: 'Helvetica-Bold' },
 
-  header:           { marginBottom: 28 },
+  headerRow:        { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28 },
+  headerLogo:       { width: 90, height: 54, objectFit: 'contain', marginRight: 14 },
+  headerInfo:       { flex: 1 },
   headerName:       { fontFamily: 'Helvetica-Bold', fontSize: 15, marginBottom: 5, color: '#111827' },
   headerSub:        { fontSize: 9, color: '#6B7280', marginBottom: 2 },
 
@@ -61,12 +77,17 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
     <Document>
       {/* ── Page 1: Summary ── */}
       <Page size="LETTER" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.headerName}>{SENDER.name}</Text>
-          <Text style={styles.headerSub}>{SENDER.address}</Text>
-          <Text style={styles.headerSub}>{SENDER.city}</Text>
-          <Text style={styles.headerSub}>{SENDER.phone}</Text>
-          <Text style={styles.headerSub}>{SENDER.email}</Text>
+        <View style={styles.headerRow}>
+          {LOGO_SRC && (
+            <Image src={LOGO_SRC} style={styles.headerLogo} />
+          )}
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>{SENDER.name}</Text>
+            <Text style={styles.headerSub}>{SENDER.address}</Text>
+            <Text style={styles.headerSub}>{SENDER.city}</Text>
+            <Text style={styles.headerSub}>{SENDER.phone}</Text>
+            <Text style={styles.headerSub}>{SENDER.email}</Text>
+          </View>
         </View>
 
         <Text style={styles.invoiceTitle}>INVOICE</Text>

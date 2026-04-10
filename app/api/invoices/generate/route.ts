@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { addDays, format } from 'date-fns';
 import { prisma } from '@/lib/db';
 import { calcBase, calcHST } from '@/lib/tax';
-import { INVOICE_NUMBER_SEED } from '@/lib/constants';
+import { INVOICE_NUMBER_SEED, MONTHS } from '@/lib/constants';
 
 const bodySchema = z.object({
   companyId: z.string().min(1),
@@ -39,7 +39,17 @@ export async function POST(request: NextRequest) {
     const invoiceNumber = (maxInvoice?.invoiceNumber ?? INVOICE_NUMBER_SEED - 1) + 1;
 
     const today = new Date();
-    const flagged = rides.length < company.expectedMonthlyRides;
+
+    // Flag if current total dropped below the most recent prior invoice for this company
+    const priorInvoices = await prisma.invoice.findMany({
+      where: { companyId },
+      select: { total: true, month: true, year: true },
+    });
+    const toMonthNum = (inv: { year: number; month: string }) =>
+      inv.year * 12 + (MONTHS as readonly string[]).indexOf(inv.month);
+    priorInvoices.sort((a, b) => toMonthNum(b) - toMonthNum(a));
+    const previousInvoice = priorInvoices[0] ?? null;
+    const flagged = previousInvoice ? grandTotal < previousInvoice.total : false;
 
     const invoice = await prisma.invoice.create({
       data: {
