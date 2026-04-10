@@ -89,6 +89,22 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* Import CTA */}
+      <Link href="/import" className="block rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 p-5 shadow-sm hover:from-indigo-700 hover:to-indigo-800 transition-all group">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-200">TaxiCaller Export</p>
+            <p className="mt-1 text-xl font-bold text-white">Import Rides & Generate Invoices</p>
+            <p className="mt-1 text-sm text-indigo-200">Upload a .xlsx export to process all corporate accounts at once</p>
+          </div>
+          <div className="ml-6 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 group-hover:bg-white/20 transition-colors">
+            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+          </div>
+        </div>
+      </Link>
+
       {/* Recent invoices */}
       {recentInvoices.length > 0 && (
         <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
