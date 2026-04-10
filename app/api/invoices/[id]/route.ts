@@ -30,6 +30,18 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   }
 }
 
+export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    // Detach rides before deleting so they become uninvoiced again
+    await prisma.ride.updateMany({ where: { invoiceId: params.id }, data: { invoiceId: null } });
+    await prisma.invoice.delete({ where: { id: params.id } });
+    return new NextResponse(null, { status: 204 });
+  } catch (err: any) {
+    if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const body = await request.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);

@@ -10,8 +10,14 @@ export const SENDER = {
   address: '41C Father Costello Drive',
   city: 'Timmins ON P0N 1G0',
   phone: '+1 (705) 951-1364',
-  email: 'yashkalola@vetstaxis.ca',
+  email: 'accountspayable@vetstaxi.ca',
   hst: '787334432RT0001',
+} as const;
+
+export const BANKING = {
+  branch:      '25582',
+  institution: '001',
+  account:     '1974380',
 } as const;
 
 export const INVOICE_NUMBER_SEED = 1593;

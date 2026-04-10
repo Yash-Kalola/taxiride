@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -17,6 +17,9 @@ interface Invoice {
   company: { companyName: string; accountId: string };
 }
 
+type SortKey = 'invoiceNumber' | 'companyName';
+type SortDir = 'asc' | 'desc';
+
 function statusBadge(inv: Invoice): 'paid' | 'pending' | 'draft' | 'flagged' | 'overdue' {
   if (inv.flagged && !inv.verified) return 'flagged';
   if (inv.status === 'PAID')        return 'paid';
@@ -26,31 +29,63 @@ function statusBadge(inv: Invoice): 'paid' | 'pending' | 'draft' | 'flagged' | '
   return 'pending';
 }
 
-export default function InvoicesClient({ initialInvoices, companies }: { initialInvoices: Invoice[]; companies: Company[] }) {
-  const [invoices, setInvoices]         = useState<Invoice[]>(initialInvoices);
-  const [filterYear,    setFilterYear]  = useState<number | ''>('');
-  const [filterMonth,   setFilterMonth] = useState('');
-  const [filterStatus,  setFilterStatus]= useState('');
-  const [filterCompany, setFilterComp]  = useState('');
-  const [filterFlagged, setFilterFlagged] = useState('');
-  const [showGenerate,  setShowGenerate]= useState(false);
-  const [genForm, setGenForm]           = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear() });
-  const [generating,    setGenerating]  = useState(false);
-  const [genResult,     setGenResult]   = useState<{ invoiceId?: string; invoiceNumber?: number; flagged?: boolean; error?: string } | null>(null);
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  return (
+    <span className={`ml-1 inline-block transition-colors ${active ? 'text-indigo-500' : 'text-gray-300'}`}>
+      {active && dir === 'desc' ? '↓' : '↑'}
+    </span>
+  );
+}
 
-  const filtered = invoices.filter((inv) => {
-    if (filterYear    && inv.year      !== filterYear)    return false;
-    if (filterMonth   && inv.month     !== filterMonth)   return false;
-    if (filterCompany && inv.companyId !== filterCompany) return false;
-    if (filterStatus  && inv.status    !== filterStatus)  return false;
-    if (filterFlagged === 'yes' && !(inv.flagged && !inv.verified)) return false;
-    return true;
-  });
+export default function InvoicesClient({ initialInvoices, companies }: { initialInvoices: Invoice[]; companies: Company[] }) {
+  const [invoices, setInvoices]           = useState<Invoice[]>(initialInvoices);
+  const [filterYear,    setFilterYear]    = useState<number | ''>('');
+  const [filterMonth,   setFilterMonth]   = useState('');
+  const [filterStatus,  setFilterStatus]  = useState('');
+  const [filterCompany, setFilterComp]    = useState('');
+  const [filterFlagged, setFilterFlagged] = useState('');
+  const [searchQuery,   setSearchQuery]   = useState('');
+  const [sortKey,       setSortKey]       = useState<SortKey>('invoiceNumber');
+  const [sortDir,       setSortDir]       = useState<SortDir>('desc');
+  const [showGenerate,  setShowGenerate]  = useState(false);
+  const [genForm, setGenForm]             = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear() });
+  const [generating,    setGenerating]    = useState(false);
+  const [genResult,     setGenResult]     = useState<{ invoiceId?: string; invoiceNumber?: number; flagged?: boolean; error?: string } | null>(null);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  const sorted = useMemo(() => {
+    const base = invoices.filter((inv) => {
+      if (filterYear    && inv.year      !== filterYear)    return false;
+      if (filterMonth   && inv.month     !== filterMonth)   return false;
+      if (filterCompany && inv.companyId !== filterCompany) return false;
+      if (filterStatus  && inv.status    !== filterStatus)  return false;
+      if (filterFlagged === 'yes' && !(inv.flagged && !inv.verified)) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (!String(inv.invoiceNumber).includes(q) && !inv.company.companyName.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    return [...base].sort((a, b) => {
+      const v = sortKey === 'invoiceNumber'
+        ? a.invoiceNumber - b.invoiceNumber
+        : a.company.companyName.localeCompare(b.company.companyName);
+      return sortDir === 'asc' ? v : -v;
+    });
+  }, [invoices, filterYear, filterMonth, filterCompany, filterStatus, filterFlagged, searchQuery, sortKey, sortDir]);
 
   const totals = {
-    invoiced: filtered.reduce((s, i) => s + i.total, 0),
-    received: filtered.filter((i) => i.status === 'PAID').reduce((s, i) => s + i.total, 0),
-    pending:  filtered.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
+    invoiced: sorted.reduce((s, i) => s + i.total, 0),
+    received: sorted.filter((i) => i.status === 'PAID').reduce((s, i) => s + i.total, 0),
+    pending:  sorted.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
   };
 
   async function patch(id: string, data: object) {
@@ -61,6 +96,16 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
     }
   }
 
+  async function deleteInvoice(id: string, invoiceNumber: number) {
+    if (!confirm(`Delete Invoice #${invoiceNumber}? This cannot be undone. The rides will become uninvoiced.`)) return;
+    const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      setInvoices((prev) => prev.filter((i) => i.id !== id));
+    } else {
+      alert('Delete failed — please try again.');
+    }
+  }
+
   async function generate() {
     setGenerating(true); setGenResult(null);
     try {
@@ -68,7 +113,6 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
       const data = await res.json();
       if (!res.ok) { setGenResult({ error: data.error ?? 'Failed' }); return; }
       setGenResult({ invoiceId: data.invoiceId, invoiceNumber: data.invoiceNumber, flagged: data.flagged });
-      // Re-fetch invoices
       const updated = await fetch('/api/invoices').then((r) => r.json());
       setInvoices(updated);
     } catch { setGenResult({ error: 'Network error' }); }
@@ -80,7 +124,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
       <div className="space-y-6">
         <PageHeader
           title="Invoices"
-          description={`${invoices.length} invoices`}
+          description={`${sorted.length === invoices.length ? invoices.length : `${sorted.length} of ${invoices.length}`} invoices`}
           action={<Button variant="primary" onClick={() => { setGenResult(null); setShowGenerate(true); }}>+ Generate Invoice</Button>}
         />
 
@@ -98,8 +142,16 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
           ))}
         </div>
 
-        {/* Filters */}
+        {/* Filters + Search */}
         <div className="flex flex-wrap gap-3">
+          {/* Search input */}
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search invoice # or company…"
+            className="h-9 w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
           <Select value={String(filterYear)} onChange={(e) => setFilterYear(e.target.value ? parseInt(e.target.value) : '')} className="w-28">
             <option value="">All Years</option>
             {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -124,25 +176,40 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
           </Select>
         </div>
 
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-20 text-center">
             <p className="text-base font-semibold text-gray-900">No invoices found</p>
-            <p className="mt-1 text-sm text-gray-500">Generate your first invoice to get started.</p>
+            <p className="mt-1 text-sm text-gray-500">{searchQuery ? 'Try a different search term.' : 'Generate your first invoice to get started.'}</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Invoice #', 'Company', 'Period', 'Amount', 'Date Sent', 'Due Date', 'Status', 'Actions'].map((h) => (
+                  {/* Sortable: Invoice # */}
+                  <th
+                    className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 cursor-pointer hover:text-gray-600 select-none"
+                    onClick={() => toggleSort('invoiceNumber')}
+                  >
+                    Invoice #<SortIcon active={sortKey === 'invoiceNumber'} dir={sortDir} />
+                  </th>
+                  {/* Sortable: Company */}
+                  <th
+                    className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 cursor-pointer hover:text-gray-600 select-none"
+                    onClick={() => toggleSort('companyName')}
+                  >
+                    Company<SortIcon active={sortKey === 'companyName'} dir={sortDir} />
+                  </th>
+                  {['Period', 'Amount', 'Date Sent', 'Due Date', 'Status', 'Actions'].map((h) => (
                     <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map((inv) => {
+                {sorted.map((inv) => {
                   const sv = statusBadge(inv);
                   const isFlagged = inv.flagged && !inv.verified;
+                  const isDraft   = inv.status === 'DRAFT';
                   return (
                     <tr key={inv.id} className={`group hover:bg-gray-50 transition-colors ${isFlagged ? 'border-l-4 border-l-red-400' : ''}`}>
                       <td className="px-4 py-3.5">
@@ -168,6 +235,9 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                           }
                           {isFlagged && (
                             <Button size="sm" variant="ghost" onClick={() => patch(inv.id, { flagged: false, verified: true })} className="text-gray-400 hover:text-gray-600">Unflag</Button>
+                          )}
+                          {isDraft && (
+                            <Button size="sm" variant="ghost" onClick={() => deleteInvoice(inv.id, inv.invoiceNumber)} className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
                           )}
                         </div>
                       </td>

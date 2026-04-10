@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import * as fs from 'fs';
 import * as path from 'path';
 import { formatCurrency } from './tax';
-import { SENDER } from './constants';
+import { SENDER, BANKING } from './constants';
 import type { Company, Invoice, Ride } from '@prisma/client';
 
 // Load logo once at module level — graceful fallback if not present.
@@ -66,8 +66,15 @@ const styles = StyleSheet.create({
   balanceVal:    { fontFamily: 'Helvetica-Bold', color: '#ffffff', textAlign: 'right', fontSize: 11 },
 
   // Footer (shared across both pages)
-  footer:        { position: 'absolute', bottom: 30, left: 44, right: 44, borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 10 },
-  footerText:    { fontSize: 8, color: '#9CA3AF', textAlign: 'center', marginBottom: 2 },
+  footer:         { position: 'absolute', bottom: 30, left: 44, right: 44, borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 10 },
+  footerRow:      { flexDirection: 'row', justifyContent: 'space-between', gap: 16 },
+  footerLeft:     { flex: 1 },
+  footerText:     { fontSize: 8, color: '#9CA3AF', marginBottom: 3 },
+  footerBankBox:  { backgroundColor: '#EEF2FF', borderRadius: 5, padding: '7 10', minWidth: 160 },
+  footerBankTitle:{ fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: '#4F46E5', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 },
+  footerBankRow:  { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
+  footerBankKey:  { fontSize: 7.5, color: '#6B7280' },
+  footerBankVal:  { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: '#374151' },
 
   // Page 2 ride table
   p2Title:       { fontFamily: 'Helvetica-Bold', fontSize: 13, marginBottom: 18, color: '#111827' },
@@ -82,10 +89,30 @@ const styles = StyleSheet.create({
 function PageFooter() {
   return (
     <View style={styles.footer}>
-      <Text style={styles.footerText}>All cheques payable to {SENDER.name}</Text>
-      <Text style={styles.footerText}>
-        {SENDER.email}  ·  HST # {SENDER.hst}  ·  Due 30 days from invoice date
-      </Text>
+      <View style={styles.footerRow}>
+        {/* Left: payment instructions */}
+        <View style={styles.footerLeft}>
+          <Text style={styles.footerText}>All cheques payable to {SENDER.name}</Text>
+          <Text style={styles.footerText}>Email: {SENDER.email}</Text>
+          <Text style={styles.footerText}>HST is included in the total amount  ·  HST # {SENDER.hst}</Text>
+          <Text style={styles.footerText}>Due 30 days from date of invoice</Text>
+          <Text style={styles.footerText}>To pay by EFT/debit, email {SENDER.email}</Text>
+        </View>
+        {/* Right: banking block */}
+        <View style={styles.footerBankBox}>
+          <Text style={styles.footerBankTitle}>Direct Deposit / EFT</Text>
+          {[
+            ['Branch',      BANKING.branch],
+            ['Institution', BANKING.institution],
+            ['Account',     BANKING.account],
+          ].map(([k, v]) => (
+            <View key={k} style={styles.footerBankRow}>
+              <Text style={styles.footerBankKey}>{k}</Text>
+              <Text style={styles.footerBankVal}>{v}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
     </View>
   );
 }

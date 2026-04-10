@@ -18,7 +18,13 @@ interface InvoiceRow {
   company: { id: string; companyName: string };
 }
 
-export default function MonthlyOverview({ invoices }: { invoices: InvoiceRow[] }) {
+export default function MonthlyOverview({
+  invoices,
+  companies: allCompanies,
+}: {
+  invoices: InvoiceRow[];
+  companies: { id: string; companyName: string }[];
+}) {
   // Default to the most recent year that has data, falling back to current year
   const availableYears = useMemo(() => {
     const ys = [...new Set(invoices.map((i) => i.year))].sort((a, b) => b - a);
@@ -39,14 +45,8 @@ export default function MonthlyOverview({ invoices }: { invoices: InvoiceRow[] }
     return MONTHS.filter((m) => ms.has(m));
   }, [yearInvoices]);
 
-  // All companies that have invoices in this year, sorted alphabetically
-  const companies = useMemo(() => {
-    const map = new Map<string, string>(); // id → name
-    yearInvoices.forEach((i) => map.set(i.company.id, i.company.companyName));
-    return [...map.entries()]
-      .map(([id, companyName]) => ({ id, companyName }))
-      .sort((a, b) => a.companyName.localeCompare(b.companyName));
-  }, [yearInvoices]);
+  // ALL companies (not just those with invoices) — shows inactive companies too
+  const companies = allCompanies;
 
   // Build lookup: companyId + month → invoice
   const lookup = useMemo(() => {
@@ -69,10 +69,10 @@ export default function MonthlyOverview({ invoices }: { invoices: InvoiceRow[] }
   const grandTotal = yearInvoices.reduce((s, i) => s + i.total, 0);
   const flaggedCount = yearInvoices.filter((i) => i.flagged && !i.verified).length;
 
-  if (invoices.length === 0) {
+  if (companies.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Monthly Overview" description="No invoices yet — generate your first invoice to see the comparison grid." />
+        <PageHeader title="Monthly Overview" description="No companies yet — add companies to see them here." />
       </div>
     );
   }
@@ -81,7 +81,7 @@ export default function MonthlyOverview({ invoices }: { invoices: InvoiceRow[] }
     <div className="space-y-6">
       <PageHeader
         title="Monthly Overview"
-        description={`${year} · ${companies.length} companies · ${yearInvoices.length} invoices · ${formatCurrency(grandTotal)}`}
+        description={`${year} · ${companies.length} companies · ${yearInvoices.length} invoices · ${formatCurrency(grandTotal)} invoiced`}
         action={
           flaggedCount > 0 ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 ring-1 ring-red-200">

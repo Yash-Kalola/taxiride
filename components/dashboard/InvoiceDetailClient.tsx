@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -17,11 +18,13 @@ interface Invoice {
 }
 
 export default function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) {
-  const [invoice, setInvoice] = useState(initial);
-  const [notes,   setNotes]   = useState(initial.notes ?? '');
-  const [saving,  setSaving]  = useState(false);
-  const [sending, setSending] = useState(false);
-  const [msg,     setMsg]     = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+  const router = useRouter();
+  const [invoice, setInvoice]   = useState(initial);
+  const [notes,   setNotes]     = useState(initial.notes ?? '');
+  const [saving,  setSaving]    = useState(false);
+  const [sending, setSending]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [msg,     setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -51,6 +54,18 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     setSending(false);
   }
 
+  async function deleteInvoice() {
+    if (!confirm(`Delete Invoice #${invoice.invoiceNumber}? This cannot be undone. The rides will become uninvoiced again.`)) return;
+    setDeleting(true);
+    const res = await fetch(`/api/invoices/${invoice.id}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      router.push('/invoices');
+    } else {
+      setMsg({ type: 'err', text: 'Delete failed — please try again.' });
+      setDeleting(false);
+    }
+  }
+
   async function markPaid() {
     const res = await fetch(`/api/invoices/${invoice.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'PAID' }) });
     if (res.ok) setInvoice((prev) => ({ ...prev, status: 'PAID' }));
@@ -74,6 +89,11 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
           <Button variant="secondary" onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')}>
             Download PDF
           </Button>
+          {invoice.status === 'DRAFT' && (
+            <Button variant="danger" onClick={deleteInvoice} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          )}
           {invoice.status !== 'PAID' && (
             <>
               {invoice.status === 'DRAFT' && (

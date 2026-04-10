@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { formatCurrency } from '@/lib/tax';
 import PageHeader from '@/components/ui/PageHeader';
+import DashboardRefresh from '@/components/dashboard/DashboardRefresh';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="px-8 py-8 space-y-8">
-      <PageHeader title="Dashboard" description="Overview of your invoice activity" />
+      <PageHeader title="Dashboard" description="Overview of your invoice activity" action={<DashboardRefresh />} />
 
       {!dbConnected && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">

@@ -9,21 +9,28 @@ export default async function OverviewPage() {
     total: number; flagged: boolean; verified: boolean; status: string;
     company: { id: string; companyName: string };
   }[] = [];
+  let companies: { id: string; companyName: string }[] = [];
 
   try {
-    invoices = await prisma.invoice.findMany({
-      select: {
-        id: true, invoiceNumber: true, month: true, year: true,
-        total: true, flagged: true, verified: true, status: true,
-        company: { select: { id: true, companyName: true } },
-      },
-      orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
-    });
+    [invoices, companies] = await Promise.all([
+      prisma.invoice.findMany({
+        select: {
+          id: true, invoiceNumber: true, month: true, year: true,
+          total: true, flagged: true, verified: true, status: true,
+          company: { select: { id: true, companyName: true } },
+        },
+        orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
+      }),
+      prisma.company.findMany({
+        select: { id: true, companyName: true },
+        orderBy: { companyName: 'asc' },
+      }),
+    ]);
   } catch {}
 
   return (
     <div className="px-8 py-8">
-      <MonthlyOverview invoices={invoices} />
+      <MonthlyOverview invoices={invoices} companies={companies} />
     </div>
   );
 }
