@@ -21,7 +21,7 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
   const [notes,   setNotes]   = useState(initial.notes ?? '');
   const [saving,  setSaving]  = useState(false);
   const [sending, setSending] = useState(false);
-  const [msg,     setMsg]     = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [msg,     setMsg]     = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -41,7 +41,10 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     const data = await res.json();
     if (res.ok) {
       setInvoice((prev) => ({ ...prev, status: 'PENDING', dateSent: data.invoice.dateSent }));
-      setMsg({ type: 'ok', text: data.emailError ? `Invoice sent (PDF generated). Email stub active: ${data.emailError}` : 'Invoice sent successfully.' });
+      setMsg(data.emailError
+        ? { type: 'warn', text: 'Invoice marked as sent. Email could not be delivered — check SMTP settings in Vercel.' }
+        : { type: 'ok',  text: 'Invoice sent and emailed successfully.' }
+      );
     } else {
       setMsg({ type: 'err', text: data.error ?? 'Send failed.' });
     }
@@ -98,7 +101,11 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
       </div>
 
       {msg && (
-        <div className={`rounded-xl px-4 py-3 text-sm ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+        <div className={`rounded-xl px-4 py-3 text-sm ${
+        msg.type === 'ok'   ? 'bg-emerald-50 text-emerald-700' :
+        msg.type === 'warn' ? 'bg-amber-50 text-amber-700'     :
+                              'bg-red-50 text-red-600'
+      }`}>
           {msg.text}
         </div>
       )}

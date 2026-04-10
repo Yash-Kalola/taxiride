@@ -200,7 +200,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
           {genResult?.invoiceNumber && (
             <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
               Invoice #{genResult.invoiceNumber} created as draft.{' '}
-              {genResult.flagged && <span className="font-medium">⚠ Flagged — fewer rides than expected.</span>}
+              {genResult.flagged && <span className="font-medium">⚠ Flagged — total is lower than last month.</span>}
               {' '}<Link href={`/invoices/${genResult.invoiceId}`} className="font-semibold underline">Review & Send →</Link>
             </div>
           )}
