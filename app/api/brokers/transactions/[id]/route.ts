@@ -9,7 +9,7 @@ const updateSchema = z.object({
   dueDate:     z.string().nullable().optional(),
   month:       z.coerce.number().int().min(1).max(12).optional(),
   year:        z.coerce.number().int().optional(),
-  status:      z.enum(['PAID', 'PENDING']).optional(),
+  status:      z.enum(['PAID', 'PENDING', 'VOID']).optional(),
 });
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {

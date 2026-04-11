@@ -13,7 +13,7 @@ export async function GET() {
   try {
     const brokers = await prisma.broker.findMany({
       orderBy: { name: 'asc' },
-      include: { transactions: true },
+      include: { transactions: true, vehicles: { where: { isActive: true } } },
     });
     return NextResponse.json(brokers);
   } catch (err) {

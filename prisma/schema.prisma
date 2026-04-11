@@ -80,6 +80,7 @@ enum TransactionType {
 enum TransactionStatus {
   PAID
   PENDING
+  VOID
 }
 
 model Broker {

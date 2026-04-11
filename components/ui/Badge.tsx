@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 
-type BadgeVariant = 'paid' | 'pending' | 'draft' | 'flagged' | 'overdue' | 'active' | 'inactive';
+type BadgeVariant = 'paid' | 'pending' | 'draft' | 'flagged' | 'overdue' | 'active' | 'inactive' | 'void';
 
 const styles: Record<BadgeVariant, string> = {
   paid:     'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20',
@@ -9,7 +9,8 @@ const styles: Record<BadgeVariant, string> = {
   flagged:  'bg-red-50     text-red-700     ring-1 ring-red-600/20',
   overdue:  'bg-orange-50  text-orange-700  ring-1 ring-orange-600/20',
   active:   'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20',
-  inactive: 'bg-gray-100   text-gray-500   ring-1 ring-gray-400/20',
+  inactive: 'bg-gray-100   text-gray-500    ring-1 ring-gray-400/20',
+  void:     'bg-gray-100   text-gray-400    ring-1 ring-gray-300/40',
 };
 
 const labels: Record<BadgeVariant, string> = {
@@ -20,6 +21,7 @@ const labels: Record<BadgeVariant, string> = {
   overdue:  'Overdue',
   active:   'Active',
   inactive: 'Inactive',
+  void:     'Void',
 };
 
 export default function Badge({ variant, className }: { variant: BadgeVariant; className?: string }) {

@@ -39,8 +39,9 @@ const TYPE_LABELS: Record<string, string> = {
 
 const TX_TYPES = ['STAND_RENT', 'COMPANY_PAYMENT', 'PRODUCT_CHARGE', 'INSURANCE', 'PAYOUT', 'OTHER'] as const;
 
-function txBadgeVariant(tx: Transaction): 'paid' | 'pending' | 'overdue' {
-  if (tx.status === 'PAID') return 'paid';
+function txBadgeVariant(tx: Transaction): 'paid' | 'pending' | 'overdue' | 'void' {
+  if (tx.status === 'VOID')    return 'void';
+  if (tx.status === 'PAID')    return 'paid';
   if (tx.dueDate && new Date(tx.dueDate) < new Date()) return 'overdue';
   return 'pending';
 }
@@ -122,10 +123,8 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     transactions.filter((t) => t.type === 'STAND_RENT' && t.month === thisMonth && t.year === thisYear).length,
   [transactions, thisMonth, thisYear]);
 
-  const billingDue = useMemo(() => {
-    // Billing is due if today >= billing day AND no stand rent generated this month
-    return today.getDate() >= broker.billingDay && thisMonthStandRentCount === 0;
-  }, [today, broker.billingDay, thisMonthStandRentCount]);
+  const billingDue =
+    today.getDate() >= broker.billingDay && thisMonthStandRentCount === 0;
 
   const [generatingMonthly, setGeneratingMonthly] = useState(false);
   const [showGeneratePreview, setShowGeneratePreview] = useState(false);
@@ -315,6 +314,18 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
 
   async function markUnpaid(txId: string) {
     const res = await fetch(`/api/brokers/transactions/${txId}/pay`, { method: 'DELETE' });
+    if (res.ok) {
+      const updated = await res.json();
+      setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+    }
+  }
+
+  async function voidTx(txId: string) {
+    if (!confirm('Void this transaction? It will remain visible but excluded from all totals.')) return;
+    const res = await fetch(`/api/brokers/transactions/${txId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'VOID' }),
+    });
     if (res.ok) {
       const updated = await res.json();
       setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
@@ -518,8 +529,9 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               <tbody className="divide-y divide-gray-50">
                 {displayed.map((tx) => {
                   const bv = txBadgeVariant(tx);
+                  const isVoid = tx.status === 'VOID';
                   return (
-                    <tr key={tx.id} className="group hover:bg-gray-50 transition-colors">
+                    <tr key={tx.id} className={`group hover:bg-gray-50 transition-colors ${isVoid ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3.5 text-sm text-gray-500 whitespace-nowrap">
                         {format(new Date(tx.createdAt), 'MMM d, yyyy')}
                       </td>
@@ -528,24 +540,30 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                           {TYPE_LABELS[tx.type] ?? tx.type}
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 text-sm text-gray-600 max-w-[180px] truncate">{tx.description || '—'}</td>
+                      <td className={`px-4 py-3.5 text-sm text-gray-600 max-w-[180px] truncate ${isVoid ? 'line-through' : ''}`}>{tx.description || '—'}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{MONTHS[tx.month - 1]} {tx.year}</td>
-                      <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(tx.amount)}</td>
+                      <td className={`px-4 py-3.5 text-sm font-semibold ${isVoid ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{formatCurrency(tx.amount)}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">
                         {tx.dueDate ? format(new Date(tx.dueDate), 'MMM d, yyyy') : '—'}
                       </td>
                       <td className="px-4 py-3.5"><Badge variant={bv} /></td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => openEditTx(tx)}
-                            className="opacity-0 group-hover:opacity-100">Edit</Button>
-                          {tx.status !== 'PAID' && (
+                          {!isVoid && (
+                            <Button size="sm" variant="ghost" onClick={() => openEditTx(tx)}
+                              className="opacity-0 group-hover:opacity-100">Edit</Button>
+                          )}
+                          {!isVoid && tx.status !== 'PAID' && (
                             <Button size="sm" variant="ghost" onClick={() => markPaid(tx.id)}
                               className="text-emerald-600 hover:bg-emerald-50">Mark Paid</Button>
                           )}
-                          {tx.status === 'PAID' && (
+                          {!isVoid && tx.status === 'PAID' && (
                             <Button size="sm" variant="ghost" onClick={() => markUnpaid(tx.id)}
                               className="opacity-0 group-hover:opacity-100 text-amber-600 hover:bg-amber-50">Undo Paid</Button>
+                          )}
+                          {!isVoid && (
+                            <Button size="sm" variant="ghost" onClick={() => voidTx(tx.id)}
+                              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 hover:bg-gray-100">Void</Button>
                           )}
                           <Button size="sm" variant="ghost" onClick={() => deleteTx(tx.id)}
                             className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">
