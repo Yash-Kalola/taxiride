@@ -146,6 +146,9 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
           <View style={styles.billToBlock}>
             <Text style={styles.sectionLabel}>Bill To</Text>
             <Text style={[styles.bold, { marginBottom: 3, fontSize: 11 }]}>{company.companyName}</Text>
+            {company.contactName ? (
+              <Text style={{ fontSize: 9, color: '#374151', marginBottom: 3 }}>Attn: {company.contactName}</Text>
+            ) : null}
             <Text style={{ fontSize: 9, color: '#6B7280', lineHeight: 1.5 }}>{company.address}</Text>
             {company.poNumber ? (
               <Text style={{ fontSize: 9, color: '#374151', marginTop: 6 }}>PO # {company.poNumber}</Text>
@@ -153,10 +156,10 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
           </View>
           <View style={styles.metaBlock}>
             {[
-              ['Invoice #', String(invoice.invoiceNumber)],
-              ['Date',      dateSent],
-              ['Terms',     'Net 30'],
-              ['Due Date',  dueDate],
+              ['Invoice #',    String(invoice.invoiceNumber)],
+              ['Invoice Date', dateSent],
+              ['Terms',        'Net 30'],
+              ['Due Date',     dueDate],
             ].map(([k, v]) => (
               <View key={k} style={styles.metaRow}>
                 <Text style={styles.metaKey}>{k}</Text>

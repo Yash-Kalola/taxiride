@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 const updateSchema = z.object({
   accountId:            z.string().min(1).optional(),
   companyName:          z.string().min(1).optional(),
+  contactName:          z.string().optional(),
   address:              z.string().optional(),
   poNumber:             z.string().optional(),
   expectedMonthlyRides: z.coerce.number().int().min(0).optional(),

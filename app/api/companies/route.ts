@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 const createSchema = z.object({
   accountId:            z.string().min(1),
   companyName:          z.string().min(1),
+  contactName:          z.string().default(''),
   address:              z.string().default(''),
   poNumber:             z.string().default(''),
   expectedMonthlyRides: z.coerce.number().int().min(0).default(0),

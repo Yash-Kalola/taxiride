@@ -9,6 +9,7 @@ interface Company {
   id: string;
   accountId: string;
   companyName: string;
+  contactName: string;
   address: string;
   poNumber: string;
   expectedMonthlyRides: number;
@@ -16,7 +17,7 @@ interface Company {
   _count: { rides: number; invoices: number };
 }
 
-const EMPTY = { accountId: '', companyName: '', address: '', poNumber: '', expectedMonthlyRides: 0, email: '' };
+const EMPTY = { accountId: '', companyName: '', contactName: '', address: '', poNumber: '', expectedMonthlyRides: 0, email: '' };
 
 export default function CompaniesClient({ initialCompanies }: { initialCompanies: Company[] }) {
   const [companies, setCompanies]   = useState<Company[]>(initialCompanies);
@@ -29,7 +30,7 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
 
   function openAdd()  { setForm(EMPTY); setEditing(null); setError(''); setModal('add'); }
   function openEdit(c: Company) {
-    setForm({ accountId: c.accountId, companyName: c.companyName, address: c.address, poNumber: c.poNumber, expectedMonthlyRides: c.expectedMonthlyRides, email: c.email });
+    setForm({ accountId: c.accountId, companyName: c.companyName, contactName: c.contactName ?? '', address: c.address, poNumber: c.poNumber, expectedMonthlyRides: c.expectedMonthlyRides, email: c.email });
     setEditing(c); setError(''); setModal('edit');
   }
 
@@ -121,6 +122,7 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
             <Input label="Company Name" placeholder="Acme Corp" {...field('companyName')} />
             <Input label="Account ID" placeholder="ACC001" {...field('accountId')} />
           </div>
+          <Input label="Contact Name" placeholder="Jane Smith" {...field('contactName')} />
           <Input label="Address" placeholder="123 Main St, City, Province" {...field('address')} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Email" type="email" placeholder="billing@company.com" {...field('email')} />

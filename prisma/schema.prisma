@@ -11,6 +11,7 @@ model Company {
   id                   String    @id @default(cuid())
   accountId            String    @unique
   companyName          String
+  contactName          String    @default("")
   address              String    @default("")
   poNumber             String    @default("")
   expectedMonthlyRides Int       @default(0)

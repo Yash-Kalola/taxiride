@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { prisma } from '@/lib/db';
 import { renderInvoicePDF } from '@/lib/pdf';
 import { sendInvoiceEmail } from '@/lib/email';
@@ -32,11 +32,15 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       emailError = String(err);
     }
 
+    const today = new Date();
+    const todayStr   = format(today, 'yyyy-MM-dd');
+    const dueDateStr = format(addDays(today, 30), 'yyyy-MM-dd');
     const updated = await prisma.invoice.update({
       where: { id: params.id },
       data: {
         status:   'PENDING',
-        dateSent: format(new Date(), 'yyyy-MM-dd'),
+        dateSent: todayStr,
+        dueDate:  dueDateStr,
       },
     });
 

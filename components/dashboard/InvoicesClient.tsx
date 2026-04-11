@@ -17,7 +17,7 @@ interface Invoice {
   company: { companyName: string; accountId: string };
 }
 
-type SortKey = 'invoiceNumber' | 'companyName';
+type SortKey = 'invoiceNumber' | 'companyName' | 'total';
 type SortDir = 'asc' | 'desc';
 
 function statusBadge(inv: Invoice): 'paid' | 'pending' | 'draft' | 'flagged' | 'overdue' {
@@ -77,6 +77,8 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
     return [...base].sort((a, b) => {
       const v = sortKey === 'invoiceNumber'
         ? a.invoiceNumber - b.invoiceNumber
+        : sortKey === 'total'
+        ? a.total - b.total
         : a.company.companyName.localeCompare(b.company.companyName);
       return sortDir === 'asc' ? v : -v;
     });
@@ -96,8 +98,11 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
     }
   }
 
-  async function deleteInvoice(id: string, invoiceNumber: number) {
-    if (!confirm(`Delete Invoice #${invoiceNumber}? This cannot be undone. The rides will become uninvoiced.`)) return;
+  async function deleteInvoice(id: string, invoiceNumber: number, status: string) {
+    const warning = status !== 'DRAFT'
+      ? `Delete Invoice #${invoiceNumber}? This invoice has already been ${status.toLowerCase()}. This cannot be undone. The rides will become uninvoiced.`
+      : `Delete Invoice #${invoiceNumber}? This cannot be undone. The rides will become uninvoiced.`;
+    if (!confirm(warning)) return;
     const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 204) {
       setInvoices((prev) => prev.filter((i) => i.id !== id));
@@ -200,7 +205,13 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                   >
                     Company<SortIcon active={sortKey === 'companyName'} dir={sortDir} />
                   </th>
-                  {['Period', 'Amount', 'Date Sent', 'Due Date', 'Status', 'Actions'].map((h) => (
+                  <th
+                    className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 cursor-pointer hover:text-gray-600 select-none"
+                    onClick={() => toggleSort('total')}
+                  >
+                    Amount<SortIcon active={sortKey === 'total'} dir={sortDir} />
+                  </th>
+                  {['Period', 'Date Sent', 'Due Date', 'Status', 'Actions'].map((h) => (
                     <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -218,8 +229,8 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                         </Link>
                       </td>
                       <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{inv.company.companyName}</td>
-                      <td className="px-4 py-3.5 text-sm text-gray-500">{inv.month} {inv.year}</td>
                       <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(inv.total)}</td>
+                      <td className="px-4 py-3.5 text-sm text-gray-500">{inv.month} {inv.year}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.dateSent || '—'}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.dueDate || '—'}</td>
                       <td className="px-4 py-3.5"><Badge variant={sv} /></td>
@@ -236,9 +247,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                           {isFlagged && (
                             <Button size="sm" variant="ghost" onClick={() => patch(inv.id, { flagged: false, verified: true })} className="text-gray-400 hover:text-gray-600">Unflag</Button>
                           )}
-                          {isDraft && (
-                            <Button size="sm" variant="ghost" onClick={() => deleteInvoice(inv.id, inv.invoiceNumber)} className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
-                          )}
+                          <Button size="sm" variant="ghost" onClick={() => deleteInvoice(inv.id, inv.invoiceNumber, inv.status)} className="text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
                         </div>
                       </td>
                     </tr>
