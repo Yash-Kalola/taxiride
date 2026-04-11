@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 
 const createSchema = z.object({
-  name:         z.string().min(1),
-  phone:        z.string().default(''),
-  vehiclePlate: z.string().default(''),
-  startDate:    z.string().min(1), // ISO date string from frontend
+  name:       z.string().min(1),
+  phone:      z.string().default(''),
+  billingDay: z.number().int().min(1).max(31).default(1),
+  startDate:  z.string().min(1), // ISO date string from frontend
 });
 
 export async function GET() {
@@ -29,11 +29,11 @@ export async function POST(request: NextRequest) {
   try {
     const broker = await prisma.broker.create({
       data: {
-        name:         parsed.data.name,
-        phone:        parsed.data.phone,
-        vehiclePlate: parsed.data.vehiclePlate,
-        startDate:    new Date(parsed.data.startDate),
-        isActive:     true,
+        name:       parsed.data.name,
+        phone:      parsed.data.phone,
+        billingDay: parsed.data.billingDay,
+        startDate:  new Date(parsed.data.startDate),
+        isActive:   true,
       },
     });
     return NextResponse.json(broker, { status: 201 });

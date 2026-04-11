@@ -7,7 +7,7 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  let stats = { total: 0, paid: 0, pending: 0, draft: 0, invoiceCount: 0 };
+  let stats = { total: 0, paid: 0, pending: 0, draft: 0, overdue: 0, invoiceCount: 0, overdueCount: 0 };
   let recentInvoices: any[] = [];
   let companiesCount = 0;
   let ridesCount = 0;
@@ -23,12 +23,17 @@ export default async function DashboardPage() {
     companiesCount = companies;
     ridesCount = rides;
 
+    const todayStr      = new Date().toISOString().split('T')[0];
+    const overdueList   = allInvoices.filter((i) => i.status === 'PENDING' && i.dueDate && i.dueDate < todayStr);
+
     stats = {
       total:        allInvoices.reduce((s, i) => s + i.total, 0),
       paid:         allInvoices.filter((i) => i.status === 'PAID').reduce((s, i) => s + i.total, 0),
       pending:      allInvoices.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
       draft:        allInvoices.filter((i) => i.status === 'DRAFT').reduce((s, i) => s + i.total, 0),
+      overdue:      overdueList.reduce((s, i) => s + i.total, 0),
       invoiceCount: allInvoices.length,
+      overdueCount: overdueList.length,
     };
   } catch {
     dbConnected = false;
@@ -45,21 +50,29 @@ export default async function DashboardPage() {
       )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {[
-          { label: 'Total Invoiced',  value: stats.total,   count: stats.invoiceCount, color: 'from-indigo-500 to-indigo-600' },
-          { label: 'Received',        value: stats.paid,    count: null,               color: 'from-emerald-500 to-emerald-600' },
-          { label: 'Pending',         value: stats.pending, count: null,               color: 'from-amber-500 to-amber-600' },
-          { label: 'Drafts',          value: stats.draft,   count: null,               color: 'from-slate-400 to-slate-500' },
+          { label: 'Total Invoiced', value: stats.total,   sub: `${stats.invoiceCount} invoice${stats.invoiceCount !== 1 ? 's' : ''}`, valueColor: 'text-gray-900' },
+          { label: 'Received',       value: stats.paid,    sub: null,                                                                    valueColor: 'text-emerald-600' },
+          { label: 'Pending',        value: stats.pending, sub: null,                                                                    valueColor: 'text-amber-600' },
+          { label: 'Drafts',         value: stats.draft,   sub: null,                                                                    valueColor: 'text-slate-500' },
         ].map((card) => (
           <div key={card.label} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{card.label}</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">{formatCurrency(card.value)}</p>
-            {card.count !== null && (
-              <p className="mt-1 text-xs text-gray-500">{card.count} invoice{card.count !== 1 ? 's' : ''}</p>
-            )}
+            <p className={`mt-2 text-3xl font-bold ${card.valueColor}`}>{formatCurrency(card.value)}</p>
+            {card.sub && <p className="mt-1 text-xs text-gray-500">{card.sub}</p>}
           </div>
         ))}
+        {/* Overdue card — always visible, highlights red when overdue invoices exist */}
+        <div className={`rounded-2xl p-5 shadow-sm ring-1 ${stats.overdueCount > 0 ? 'bg-red-50 ring-red-200' : 'bg-white ring-gray-200'}`}>
+          <p className={`text-xs font-semibold uppercase tracking-widest ${stats.overdueCount > 0 ? 'text-red-400' : 'text-gray-400'}`}>Overdue</p>
+          <p className={`mt-2 text-3xl font-bold ${stats.overdueCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+            {stats.overdueCount > 0 ? formatCurrency(stats.overdue) : '—'}
+          </p>
+          {stats.overdueCount > 0 && (
+            <p className="mt-1 text-xs text-red-500">{stats.overdueCount} invoice{stats.overdueCount !== 1 ? 's' : ''} past due</p>
+          )}
+        </div>
       </div>
 
       {/* Quick stats row */}

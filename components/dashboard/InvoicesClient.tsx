@@ -90,6 +90,23 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
     pending:  sorted.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.total, 0),
   };
 
+  // Build lookup: companyId + month index → total, for flagging delta display
+  const prevTotalMap = useMemo(() => {
+    const MONTH_ORDER = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const map = new Map<string, number>();
+    invoices.forEach((inv) => {
+      map.set(`${inv.companyId}-${inv.year}-${inv.month}`, inv.total);
+    });
+    function getPrev(companyId: string, year: number, month: string): number | null {
+      const idx = MONTH_ORDER.indexOf(month);
+      if (idx === -1) return null;
+      const prevMonth = idx === 0 ? MONTH_ORDER[11] : MONTH_ORDER[idx - 1];
+      const prevYear  = idx === 0 ? year - 1 : year;
+      return map.get(`${companyId}-${prevYear}-${prevMonth}`) ?? null;
+    }
+    return getPrev;
+  }, [invoices]);
+
   async function patch(id: string, data: object) {
     const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     if (res.ok) {
@@ -229,7 +246,19 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                         </Link>
                       </td>
                       <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{inv.company.companyName}</td>
-                      <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(inv.total)}</td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-sm font-semibold text-gray-900">{formatCurrency(inv.total)}</span>
+                        {isFlagged && (() => {
+                          const prev = prevTotalMap(inv.companyId, inv.year, inv.month);
+                          if (prev == null) return null;
+                          const diff = inv.total - prev;
+                          return (
+                            <span className="ml-1.5 text-xs text-red-500" title={`Was ${formatCurrency(prev)} last month`}>
+                              ↓ {formatCurrency(Math.abs(diff))}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.month} {inv.year}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.dateSent || '—'}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.dueDate || '—'}</td>

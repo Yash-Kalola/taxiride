@@ -21,10 +21,11 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
   const router = useRouter();
   const [invoice, setInvoice]   = useState(initial);
   const [notes,   setNotes]     = useState(initial.notes ?? '');
-  const [saving,  setSaving]    = useState(false);
-  const [sending, setSending]   = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [msg,     setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+  const [saving,    setSaving]    = useState(false);
+  const [sending,   setSending]   = useState(false);
+  const [resending, setResending] = useState(false);
+  const [deleting,  setDeleting]  = useState(false);
+  const [msg,       setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -64,6 +65,22 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
       setMsg({ type: 'err', text: 'Delete failed — please try again.' });
       setDeleting(false);
     }
+  }
+
+  async function resend() {
+    if (!confirm(`Resend Invoice #${invoice.invoiceNumber} to ${invoice.company.email || '(no email set)'}?`)) return;
+    setResending(true); setMsg(null);
+    const res  = await fetch(`/api/invoices/${invoice.id}/resend`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      setMsg(data.emailError
+        ? { type: 'warn', text: 'Email could not be delivered — check SMTP settings in Vercel.' }
+        : { type: 'ok',   text: 'Invoice re-sent successfully.' }
+      );
+    } else {
+      setMsg({ type: 'err', text: data.error ?? 'Resend failed.' });
+    }
+    setResending(false);
   }
 
   async function markPaid() {
@@ -116,6 +133,11 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
                 <Button variant="primary" onClick={markPaid} className="bg-emerald-600 hover:bg-emerald-700">Mark as Paid</Button>
               )}
             </>
+          )}
+          {invoice.status !== 'DRAFT' && invoice.company.email && (
+            <Button variant="secondary" onClick={resend} disabled={resending}>
+              {resending ? 'Sending…' : 'Resend Email'}
+            </Button>
           )}
         </div>
       </div>

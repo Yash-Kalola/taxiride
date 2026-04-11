@@ -20,6 +20,7 @@ export async function GET() {
             OR: months.map((m) => ({ month: m.month, year: m.year })),
           },
         },
+        vehicles: { where: { isActive: true }, select: { cabNumber: true, isCompanyCar: true } },
       },
     });
 
@@ -41,7 +42,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      brokers: brokers.map((b) => ({ id: b.id, name: b.name, isActive: b.isActive })),
+      brokers: brokers.map((b) => ({ id: b.id, name: b.name, isActive: b.isActive, vehicles: b.vehicles })),
       months:  months.map((m) => ({ label: m.label, key: `${m.year}-${String(m.month).padStart(2, '0')}` })),
       grid,
     });

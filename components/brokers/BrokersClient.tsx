@@ -16,15 +16,16 @@ interface Transaction {
 }
 
 interface Broker {
-  id: string; name: string; phone: string; vehiclePlate: string;
+  id: string; name: string; phone: string; billingDay: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
+  vehicles: { id: string }[];
 }
 
 type FilterStatus = 'active' | 'inactive' | 'all';
 type ModalMode = 'add' | 'edit' | null;
 
-const EMPTY_FORM = { name: '', phone: '', vehiclePlate: '', startDate: '' };
+const EMPTY_FORM = { name: '', phone: '', billingDay: '1', startDate: '' };
 
 function owedToUs(transactions: Transaction[]): number {
   return transactions
@@ -58,7 +59,8 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
   }
   function openEdit(b: Broker) {
     setForm({
-      name: b.name, phone: b.phone, vehiclePlate: b.vehiclePlate,
+      name: b.name, phone: b.phone,
+      billingDay: String(b.billingDay ?? 1),
       startDate: b.startDate ? b.startDate.split('T')[0] : '',
     });
     setEditing(b); setError(''); setModal('edit');
@@ -74,7 +76,8 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
     try {
       const url    = modal === 'edit' ? `/api/brokers/${editing!.id}` : '/api/brokers';
       const method = modal === 'edit' ? 'PUT' : 'POST';
-      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const payload = { ...form, billingDay: parseInt(form.billingDay) || 1 };
+      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data   = await res.json();
       if (!res.ok) { setError(data.error?.fieldErrors ? JSON.stringify(data.error.fieldErrors) : data.error ?? 'Failed'); return; }
       const updated = await fetch('/api/brokers').then((r) => r.json());
@@ -156,10 +159,11 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Name', 'Plate', 'Start Date', 'Status', 'Owed To Us', 'We Owe Them', ''].map((h) => (
+                {['Name', 'Start Date', 'Status', 'Owed To Us', 'We Owe Them', ''].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                 ))}
               </tr>
@@ -173,12 +177,12 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
                     </Link>
                     {b.phone && <p className="text-xs text-gray-400 mt-0.5">{b.phone}</p>}
                   </td>
-                  <td className="px-5 py-4 font-mono text-sm text-gray-700">{b.vehiclePlate || '—'}</td>
                   <td className="px-5 py-4 text-sm text-gray-500">
                     {b.startDate ? format(new Date(b.startDate), 'MMM d, yyyy') : '—'}
                   </td>
                   <td className="px-5 py-4">
-                    <Badge variant={b.isActive ? 'paid' : 'draft'} />
+                    <Badge variant={b.isActive ? 'active' : 'inactive'} />
+                    {b.vehicles.length > 0 && <p className="text-xs text-gray-400 mt-0.5">{b.vehicles.length} cab{b.vehicles.length !== 1 ? 's' : ''}</p>}
                   </td>
                   <td className="px-5 py-4 text-sm font-semibold text-gray-900">
                     {formatCurrency(owedToUs(b.transactions))}
@@ -201,6 +205,7 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -212,8 +217,19 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
             <Input label="Phone" placeholder="+1 (705) 555-0123" {...field('phone')} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Vehicle Plate" placeholder="ABCD 123" {...field('vehiclePlate')} />
             <Input label="Start Date" type="date" {...field('startDate')} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Monthly Billing Day
+                <span className="ml-1 text-xs font-normal text-gray-400">(1–31)</span>
+              </label>
+              <input
+                type="number" min={1} max={31}
+                value={form.billingDay}
+                onChange={(e) => setForm((f) => ({ ...f, billingDay: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
           </div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">

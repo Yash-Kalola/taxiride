@@ -1,21 +1,25 @@
 import { clsx } from 'clsx';
 
-type BadgeVariant = 'paid' | 'pending' | 'draft' | 'flagged' | 'overdue';
+type BadgeVariant = 'paid' | 'pending' | 'draft' | 'flagged' | 'overdue' | 'active' | 'inactive';
 
 const styles: Record<BadgeVariant, string> = {
-  paid:    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20',
-  pending: 'bg-amber-50   text-amber-700   ring-1 ring-amber-600/20',
-  draft:   'bg-slate-100  text-slate-600   ring-1 ring-slate-500/20',
-  flagged: 'bg-red-50     text-red-700     ring-1 ring-red-600/20',
-  overdue: 'bg-orange-50  text-orange-700  ring-1 ring-orange-600/20',
+  paid:     'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20',
+  pending:  'bg-amber-50   text-amber-700   ring-1 ring-amber-600/20',
+  draft:    'bg-slate-100  text-slate-600   ring-1 ring-slate-500/20',
+  flagged:  'bg-red-50     text-red-700     ring-1 ring-red-600/20',
+  overdue:  'bg-orange-50  text-orange-700  ring-1 ring-orange-600/20',
+  active:   'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20',
+  inactive: 'bg-gray-100   text-gray-500   ring-1 ring-gray-400/20',
 };
 
 const labels: Record<BadgeVariant, string> = {
-  paid:    'Paid',
-  pending: 'Pending',
-  draft:   'Draft',
-  flagged: 'Flagged',
-  overdue: 'Overdue',
+  paid:     'Paid',
+  pending:  'Pending',
+  draft:    'Draft',
+  flagged:  'Flagged',
+  overdue:  'Overdue',
+  active:   'Active',
+  inactive: 'Inactive',
 };
 
 export default function Badge({ variant, className }: { variant: BadgeVariant; className?: string }) {

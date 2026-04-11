@@ -3,12 +3,12 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 
 const updateSchema = z.object({
-  name:         z.string().min(1).optional(),
-  phone:        z.string().optional(),
-  vehiclePlate: z.string().optional(),
-  startDate:    z.string().optional(),
-  endDate:      z.string().nullable().optional(),
-  isActive:     z.boolean().optional(),
+  name:       z.string().min(1).optional(),
+  phone:      z.string().optional(),
+  billingDay: z.number().int().min(1).max(31).optional(),
+  startDate:  z.string().optional(),
+  endDate:    z.string().nullable().optional(),
+  isActive:   z.boolean().optional(),
 });
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {

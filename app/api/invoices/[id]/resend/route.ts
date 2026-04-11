@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { format, addDays } from 'date-fns';
 import { prisma } from '@/lib/db';
 import { renderInvoicePDF } from '@/lib/pdf';
 import { sendInvoiceEmail } from '@/lib/email';
@@ -12,16 +11,13 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       include: { company: true, rides: true },
     });
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    if (!invoice.company.email) return NextResponse.json({ error: 'No email address on file for this company.' }, { status: 400 });
 
     const pdfBuffer = await renderInvoicePDF(
       invoice.company as Company,
       invoice.rides as Ride[],
       invoice as Invoice
     );
-
-    const today      = new Date();
-    const todayStr   = format(today, 'yyyy-MM-dd');
-    const dueDateStr = format(addDays(today, 30), 'yyyy-MM-dd');
 
     let emailError: string | null = null;
     try {
@@ -31,23 +27,15 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
         month:         invoice.month,
         year:          invoice.year,
         total:         invoice.total,
-        dueDate:       dueDateStr,
+        dueDate:       invoice.dueDate ?? undefined,
         companyName:   invoice.company.companyName,
         pdfBuffer,
       });
     } catch (err) {
       emailError = String(err);
     }
-    const updated = await prisma.invoice.update({
-      where: { id: params.id },
-      data: {
-        status:   'PENDING',
-        dateSent: todayStr,
-        dueDate:  dueDateStr,
-      },
-    });
 
-    return NextResponse.json({ success: true, emailError, invoice: updated });
+    return NextResponse.json({ success: true, emailError });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

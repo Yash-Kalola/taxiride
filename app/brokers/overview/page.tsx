@@ -18,7 +18,7 @@ export default async function BrokerOverviewPage() {
     });
   }
 
-  let brokers: { id: string; name: string; isActive: boolean; transactions: { type: string; amount: number; month: number; year: number }[] }[] = [];
+  let brokers: { id: string; name: string; isActive: boolean; transactions: { type: string; amount: number; month: number; year: number }[]; vehicles: { cabNumber: string; isCompanyCar: boolean }[] }[] = [];
   try {
     brokers = await prisma.broker.findMany({
       orderBy: { name: 'asc' },
@@ -27,6 +27,7 @@ export default async function BrokerOverviewPage() {
           where: { OR: months.map((m) => ({ month: m.month, year: m.year })) },
           select: { type: true, amount: true, month: true, year: true },
         },
+        vehicles: { where: { isActive: true }, select: { cabNumber: true, isCompanyCar: true } },
       },
     });
   } catch {}
