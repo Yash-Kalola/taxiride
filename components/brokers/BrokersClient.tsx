@@ -229,6 +229,9 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
                 onChange={(e) => setForm((f) => ({ ...f, billingDay: e.target.value }))}
                 className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
+              <p className="mt-1 text-xs text-gray-400">
+                The day of each month when this broker's charges become due. The Generate button highlights amber on or after this day when no charges exist yet for that month.
+              </p>
             </div>
           </div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}

@@ -128,6 +128,25 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   }, [today, broker.billingDay, thisMonthStandRentCount]);
 
   const [generatingMonthly, setGeneratingMonthly] = useState(false);
+  const [showGeneratePreview, setShowGeneratePreview] = useState(false);
+
+  const generatePreviewItems = useMemo(() => {
+    const activeVehicles = broker.vehicles.filter((v) => v.isActive);
+    const vehicleCount   = activeVehicles.length || 1;
+    const items: { label: string; amount: number }[] = [];
+    for (let week = 1; week <= 4; week++) {
+      const rate = week === 1 ? 200 : 230;
+      items.push({
+        label:  `Week ${week} Stand Rent — ${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate}`,
+        amount: rate * vehicleCount,
+      });
+    }
+    const companyCabs = activeVehicles.filter((v) => v.isCompanyCar && v.insuranceAmount > 0);
+    for (const cab of companyCabs) {
+      items.push({ label: `Insurance — Cab #${cab.cabNumber}`, amount: cab.insuranceAmount });
+    }
+    return items;
+  }, [broker.vehicles]);
 
   async function generateMonthlyCharges() {
     setGeneratingMonthly(true); setTxError('');
@@ -383,7 +402,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               <Button
                 variant="primary"
                 size="sm"
-                onClick={generateMonthlyCharges}
+                onClick={() => setShowGeneratePreview(true)}
                 disabled={generatingMonthly}
                 className="bg-amber-500 hover:bg-amber-600 border-amber-500"
               >
@@ -391,7 +410,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               </Button>
             )}
             {!billingDue && thisMonthStandRentCount === 0 && today.getDate() < broker.billingDay && (
-              <Button variant="secondary" size="sm" onClick={generateMonthlyCharges} disabled={generatingMonthly}>
+              <Button variant="secondary" size="sm" onClick={() => setShowGeneratePreview(true)} disabled={generatingMonthly}>
                 {generatingMonthly ? 'Generating…' : `Generate ${MONTHS[thisMonth - 1]} Charges`}
               </Button>
             )}
@@ -724,7 +743,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               />
               {brokerForm.billingDay && (
                 <p className="mt-1 text-xs text-gray-400">
-                  Charges will generate on the {ordinal(parseInt(brokerForm.billingDay) || 1)} of each month.
+                  Charges become due on the {ordinal(parseInt(brokerForm.billingDay) || 1)} of each month. The Generate button highlights amber on or after this day when no charges have been created yet.
                 </p>
               )}
             </div>
@@ -734,6 +753,53 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             <Button variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Button>
             <Button variant="primary" onClick={saveBroker} disabled={savingBroker || !brokerForm.name}>
               {savingBroker ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Generate Charges Preview Modal */}
+      <Modal open={showGeneratePreview} onClose={() => setShowGeneratePreview(false)} title={`Generate ${MONTHS[thisMonth - 1]} ${thisYear} Charges`}>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            The following transactions will be created for <span className="font-semibold">{broker.name}</span>:
+          </p>
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Description</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-400">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {generatePreviewItems.map((item, i) => (
+                  <tr key={i}>
+                    <td className="px-4 py-2.5 text-gray-700">{item.label}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{formatCurrency(item.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-200">
+                  <td className="px-4 py-2.5 font-semibold text-gray-700">Total</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-indigo-600">
+                    {formatCurrency(generatePreviewItems.reduce((s, item) => s + item.amount, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {txError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{txError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={() => setShowGeneratePreview(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={() => { setShowGeneratePreview(false); generateMonthlyCharges(); }}
+              disabled={generatingMonthly}
+              className="bg-amber-500 hover:bg-amber-600 border-amber-500"
+            >
+              Confirm & Generate
             </Button>
           </div>
         </div>
