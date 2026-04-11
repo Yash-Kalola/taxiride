@@ -32,8 +32,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   try {
-    // Detach rides before deleting so they become uninvoiced again
-    await prisma.ride.updateMany({ where: { invoiceId: params.id }, data: { invoiceId: null } });
+    // Delete all rides linked to this invoice, then delete the invoice
+    await prisma.ride.deleteMany({ where: { invoiceId: params.id } });
     await prisma.invoice.delete({ where: { id: params.id } });
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {

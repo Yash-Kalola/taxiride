@@ -55,7 +55,7 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
   }
 
   async function deleteInvoice() {
-    if (!confirm(`Delete Invoice #${invoice.invoiceNumber}? This cannot be undone. The rides will become uninvoiced again.`)) return;
+    if (!confirm(`Delete Invoice #${invoice.invoiceNumber}? This cannot be undone. All rides in this invoice will also be permanently deleted.`)) return;
     setDeleting(true);
     const res = await fetch(`/api/invoices/${invoice.id}`, { method: 'DELETE' });
     if (res.ok || res.status === 204) {

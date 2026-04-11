@@ -100,8 +100,8 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
 
   async function deleteInvoice(id: string, invoiceNumber: number, status: string) {
     const warning = status !== 'DRAFT'
-      ? `Delete Invoice #${invoiceNumber}? This invoice has already been ${status.toLowerCase()}. This cannot be undone. The rides will become uninvoiced.`
-      : `Delete Invoice #${invoiceNumber}? This cannot be undone. The rides will become uninvoiced.`;
+      ? `Delete Invoice #${invoiceNumber}? This invoice has already been ${status.toLowerCase()}. This cannot be undone. All rides in this invoice will also be permanently deleted.`
+      : `Delete Invoice #${invoiceNumber}? This cannot be undone. All rides in this invoice will also be permanently deleted.`;
     if (!confirm(warning)) return;
     const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 204) {
