@@ -67,3 +67,46 @@ enum InvoiceStatus {
   PENDING
   PAID
 }
+
+enum TransactionType {
+  STAND_RENT
+  COMPANY_PAYMENT
+  PRODUCT_CHARGE
+  INSURANCE
+  PAYOUT
+  OTHER
+}
+
+enum TransactionStatus {
+  PAID
+  PENDING
+}
+
+model Broker {
+  id           String              @id @default(cuid())
+  name         String
+  phone        String              @default("")
+  vehiclePlate String              @default("")
+  startDate    DateTime
+  endDate      DateTime?
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  transactions BrokerTransaction[]
+}
+
+model BrokerTransaction {
+  id          String            @id @default(cuid())
+  brokerId    String
+  broker      Broker            @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  amount      Float
+  description String            @default("")
+  dueDate     DateTime?
+  paidDate    DateTime?
+  status      TransactionStatus @default(PENDING)
+  month       Int
+  year        Int
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
