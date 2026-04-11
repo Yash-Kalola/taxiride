@@ -313,6 +313,14 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     }
   }
 
+  async function markUnpaid(txId: string) {
+    const res = await fetch(`/api/brokers/transactions/${txId}/pay`, { method: 'DELETE' });
+    if (res.ok) {
+      const updated = await res.json();
+      setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+    }
+  }
+
   async function deleteTx(txId: string) {
     if (!confirm('Delete this transaction? This cannot be undone.')) return;
     const res = await fetch(`/api/brokers/transactions/${txId}`, { method: 'DELETE' });
@@ -534,6 +542,10 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                           {tx.status !== 'PAID' && (
                             <Button size="sm" variant="ghost" onClick={() => markPaid(tx.id)}
                               className="text-emerald-600 hover:bg-emerald-50">Mark Paid</Button>
+                          )}
+                          {tx.status === 'PAID' && (
+                            <Button size="sm" variant="ghost" onClick={() => markUnpaid(tx.id)}
+                              className="opacity-0 group-hover:opacity-100 text-amber-600 hover:bg-amber-50">Undo Paid</Button>
                           )}
                           <Button size="sm" variant="ghost" onClick={() => deleteTx(tx.id)}
                             className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">
