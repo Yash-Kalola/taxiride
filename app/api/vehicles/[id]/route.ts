@@ -28,7 +28,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const v = await prisma.brokerVehicle.update({
       where: { id: params.id },
       data: parsed.data,
-      include: { broker: { select: { id: true, name: true } } },
+      include: {
+        broker:     { select: { id: true, name: true } },
+        accidents:  { orderBy: { date: 'desc' } },
+        documents:  { orderBy: { createdAt: 'desc' } },
+      },
     });
     return NextResponse.json(v);
   } catch (err: any) {

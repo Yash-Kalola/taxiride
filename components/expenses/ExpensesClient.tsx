@@ -29,13 +29,13 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function ExpensesClient({ initialExpenses, brokers }: { initialExpenses: Expense[]; brokers: Broker[] }) {
+export default function ExpensesClient({ initialExpenses, brokers, initialBroker = '' }: { initialExpenses: Expense[]; brokers: Broker[]; initialBroker?: string }) {
   const [expenses,   setExpenses]  = useState<Expense[]>(initialExpenses);
   const [showAdd,    setShowAdd]   = useState(false);
   const [form,       setForm]      = useState(EMPTY_FORM);
   const [saving,     setSaving]    = useState(false);
   const [error,      setError]     = useState('');
-  const [filterBroker, setFilter]  = useState('');
+  const [filterBroker, setFilter]  = useState(initialBroker);
 
   // Attachment state
   const [attExpense,  setAttExpense]  = useState<Expense | null>(null);
@@ -53,7 +53,10 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
 
   const selectedBroker = brokers.find(b => b.id === form.brokerId);
 
-  function openAdd() { setForm(EMPTY_FORM); setError(''); setShowAdd(true); }
+  function openAdd() {
+    setForm({ ...EMPTY_FORM, brokerId: filterBroker });
+    setError(''); setShowAdd(true);
+  }
 
   async function save() {
     setSaving(true); setError('');

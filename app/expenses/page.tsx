@@ -3,9 +3,10 @@ import ExpensesClient from '@/components/expenses/ExpensesClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ExpensesPage() {
+export default async function ExpensesPage({ searchParams }: { searchParams: { broker?: string } }) {
   let expenses: any[] = [];
   let brokers: any[]  = [];
+  const initialBroker = searchParams?.broker ?? '';
 
   try {
     [expenses, brokers] = await Promise.all([
@@ -26,6 +27,7 @@ export default async function ExpensesPage() {
       <ExpensesClient
         initialExpenses={JSON.parse(JSON.stringify(expenses))}
         brokers={JSON.parse(JSON.stringify(brokers))}
+        initialBroker={initialBroker}
       />
     </div>
   );

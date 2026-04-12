@@ -144,23 +144,15 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       const allEscalated: Transaction[] = [];
 
       for (let w = fromWeek; w <= toWeek; w++) {
-        const res = await fetch(`/api/brokers/${broker.id}/generate-week`, {
+        await fetch(`/api/brokers/${broker.id}/generate-week`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ month: thisMonth, year: thisYear, weekNumber: w }),
         });
-        if (res.ok) {
-          const data = await res.json();
-          allCreated.push(...data.created);
-          allEscalated.push(...data.escalated);
-        }
       }
 
-      setTransactions((prev) => {
-        // Replace escalated transactions with updated versions
-        const escalatedMap = new Map(allEscalated.map((t) => [t.id, t]));
-        const updated = prev.map((t) => escalatedMap.get(t.id) ?? t);
-        return [...allCreated.reverse(), ...updated];
-      });
+      // Refetch fresh transactions from server to avoid any stale-state merging
+      const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
+      if (fresh?.transactions) setTransactions(fresh.transactions);
 
       const label = fromWeek === toWeek ? `Week ${fromWeek}` : `Weeks ${fromWeek}–${toWeek}`;
       setAutoGenBanner(`✓ Auto-generated ${label} stand rent for ${MONTHS[thisMonth - 1]}`);
@@ -420,6 +412,25 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             ))}
           </div>
         )}
+      </div>
+
+      {/* Expenses quick link */}
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Expenses</p>
+            <p className="mt-0.5 text-sm text-gray-500">Receipts, product charges, and other broker expenses.</p>
+          </div>
+          <Link
+            href={`/expenses?broker=${broker.id}`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+            </svg>
+            View / Add Expenses →
+          </Link>
+        </div>
       </div>
 
       {/* Summary cards */}

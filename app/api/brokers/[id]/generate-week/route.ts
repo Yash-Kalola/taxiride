@@ -28,6 +28,18 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const lateRate       = Math.round(rate * 1.15); // 15% late fee (e.g. $200 → $230)
 
     const result = await prisma.$transaction(async (tx) => {
+      // Idempotency: if this week's stand rent already exists (non-void), skip silently
+      const alreadyExists = await tx.brokerTransaction.findFirst({
+        where: {
+          brokerId: params.id, type: 'STAND_RENT', month, year,
+          status: { not: 'VOID' },
+          description: { startsWith: `Week ${weekNumber} (` },
+        },
+      });
+      if (alreadyExists) {
+        return { created: [], escalatedIds: [], escalatedCount: 0, skipped: true };
+      }
+
       // 1. Escalate all PENDING stand rent for this month/year to lateRate × vehicleCount
       const pendingRent = await tx.brokerTransaction.findMany({
         where: { brokerId: params.id, type: 'STAND_RENT', month, year, status: 'PENDING' },
