@@ -26,6 +26,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 
+    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_SIZE) return NextResponse.json({ error: 'File too large. Maximum size is 10 MB.' }, { status: 413 });
+
     // Create upload directory
     const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'vehicles', params.id);
     fs.mkdirSync(uploadDir, { recursive: true });

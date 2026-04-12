@@ -16,7 +16,7 @@ interface ExpenseAttachment {
 }
 interface Expense  {
   id: string; brokerId: string; cabNumber: string; date: string;
-  amount: number; note: string; createdAt: string;
+  amount: number; note: string; paid: boolean; createdAt: string;
   broker: { id: string; name: string };
   attachments: ExpenseAttachment[];
 }
@@ -113,6 +113,17 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
     if (res.ok || res.status === 204) setExpenses(prev => prev.filter(e => e.id !== id));
   }
 
+  async function togglePaid(e: Expense) {
+    const res = await fetch(`/api/brokers/expenses/${e.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paid: !e.paid }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setExpenses(prev => prev.map(x => x.id === e.id ? data : x));
+    }
+  }
+
   // Attachment handlers
   function openAttachments(e: Expense) {
     setAttExpense(e); setAttLabel(''); setAttFile(null); setAttError(''); setShowAttModal(true);
@@ -188,7 +199,7 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date', 'Broker', 'Cab #', 'Amount', 'Note', 'Attachments', ''].map(h => (
+                  {['Date', 'Broker', 'Cab #', 'Amount', 'Note', 'Status', 'Attachments', ''].map(h => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -207,6 +218,18 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
                     <td className="px-5 py-4 font-mono text-sm text-gray-700">{e.cabNumber || '—'}</td>
                     <td className="px-5 py-4 text-sm font-semibold text-gray-900">{formatCurrency(e.amount)}</td>
                     <td className="px-5 py-4 text-sm text-gray-600 max-w-[200px] truncate">{e.note || '—'}</td>
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => togglePaid(e)}
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors ${
+                          e.paid
+                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20 hover:bg-emerald-100'
+                            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-600/20 hover:bg-amber-100'
+                        }`}
+                      >
+                        {e.paid ? 'Paid' : 'Unpaid'}
+                      </button>
+                    </td>
                     <td className="px-5 py-4">
                       <button
                         onClick={() => openAttachments(e)}
@@ -235,7 +258,7 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
                 <tr className="border-t-2 border-gray-200 bg-gray-50">
                   <td colSpan={3} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Total</td>
                   <td className="px-5 py-3 text-sm font-bold text-gray-900">{formatCurrency(totalAmount)}</td>
-                  <td colSpan={3} />
+                  <td colSpan={4} />
                 </tr>
               </tfoot>
             </table>

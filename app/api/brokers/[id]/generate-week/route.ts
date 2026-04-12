@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { formatWeekRange } from '@/lib/weeks';
 
 const schema = z.object({
@@ -31,6 +32,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const weekLabel = formatWeekRange(weekNumber, month, year);
 
     const result = await prisma.$transaction(async (tx) => {
+      // Serializable isolation prevents duplicate stand rent creation from concurrent requests
       // Idempotency: count existing non-void STAND_RENT for this month/year
       // If count >= weekNumber, this week has already been generated
       const existingCount = await tx.brokerTransaction.count({
@@ -95,7 +97,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
 
       return { created, escalatedIds, escalatedCount: escalatedIds.length };
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     // Return created transactions + the updated (escalated) transactions for client state sync
     const escalatedTxs = result.escalatedIds.length > 0

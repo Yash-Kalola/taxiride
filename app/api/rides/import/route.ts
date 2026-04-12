@@ -31,11 +31,29 @@ export async function POST(request: NextRequest) {
     const company = await prisma.company.findUnique({ where: { id: companyId } });
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 });
 
+    // Dedup: find existing jobIds for this company/month/year to skip duplicates
+    const incomingJobIds = rows.map(r => r.jobId).filter(Boolean);
+    let existingJobIds = new Set<string>();
+    if (incomingJobIds.length > 0) {
+      const existing = await prisma.ride.findMany({
+        where: { companyId, month, year, jobId: { in: incomingJobIds } },
+        select: { jobId: true },
+      });
+      existingJobIds = new Set(existing.map(r => r.jobId));
+    }
+
+    const newRows = rows.filter(r => !r.jobId || !existingJobIds.has(r.jobId));
+    const skipped = rows.length - newRows.length;
+
+    if (newRows.length === 0) {
+      return NextResponse.json({ imported: 0, skipped, error: 'All rides already imported.' }, { status: 200 });
+    }
+
     const result = await prisma.ride.createMany({
-      data: rows.map((row) => ({ ...row, companyId, month, year })),
+      data: newRows.map((row) => ({ ...row, companyId, month, year })),
     });
 
-    return NextResponse.json({ imported: result.count }, { status: 201 });
+    return NextResponse.json({ imported: result.count, skipped }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

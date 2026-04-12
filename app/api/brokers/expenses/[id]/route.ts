@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import path from 'path';
+import fs from 'fs';
 
 const putSchema = z.object({
   cabNumber: z.string().optional(),
   date:      z.string().optional(),
   amount:    z.number().optional(),
   note:      z.string().optional(),
+  paid:      z.boolean().optional(),
 });
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
@@ -35,6 +38,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Delete attachment files from disk before removing DB records
+    const attachments = await prisma.expenseAttachment.findMany({
+      where: { expenseId: params.id },
+      select: { filePath: true },
+    });
+    for (const att of attachments) {
+      try { fs.unlinkSync(path.join(process.cwd(), 'public', att.filePath)); } catch {}
+    }
+
     await prisma.brokerExpense.delete({ where: { id: params.id } });
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {

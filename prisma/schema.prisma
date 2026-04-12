@@ -164,6 +164,7 @@ model BrokerExpense {
   date        DateTime
   amount      Float
   note        String              @default("")
+  paid        Boolean             @default(false)
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
   attachments ExpenseAttachment[]

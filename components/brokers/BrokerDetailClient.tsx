@@ -19,7 +19,7 @@ interface Transaction {
 }
 
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
-interface BrokerExpense { id: string; cabNumber: string; date: string; amount: number; note: string; }
+interface BrokerExpense { id: string; cabNumber: string; date: string; amount: number; note: string; paid: boolean; }
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
@@ -87,7 +87,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
 
   // Summary card computations
   const totalExpenses = useMemo(() =>
-    broker.expenses.reduce((s, e) => s + e.amount, 0),
+    broker.expenses.filter(e => !e.paid).reduce((s, e) => s + e.amount, 0),
   [broker.expenses]);
 
   const owedToUs = useMemo(() =>
