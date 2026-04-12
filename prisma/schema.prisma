@@ -115,15 +115,30 @@ model BrokerTransaction {
 }
 
 model BrokerVehicle {
-  id              String   @id @default(cuid())
+  id              String            @id @default(cuid())
   cabNumber       String
   brokerId        String?
-  broker          Broker?  @relation(fields: [brokerId], references: [id], onDelete: SetNull)
-  isCompanyCar    Boolean  @default(false)
-  insuranceAmount Float    @default(0)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  broker          Broker?           @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+  isCompanyCar    Boolean           @default(false)
+  insuranceAmount Float             @default(0)
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  accidents       VehicleAccident[]
+}
+
+model VehicleAccident {
+  id               String        @id @default(cuid())
+  vehicleId        String
+  vehicle          BrokerVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  date             DateTime
+  incidentNumber   String        @default("")
+  claimNumber      String        @default("")
+  driver           String        @default("")
+  settlementAmount Float?
+  notes            String        @default("")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 }
 
 model BrokerExpense {

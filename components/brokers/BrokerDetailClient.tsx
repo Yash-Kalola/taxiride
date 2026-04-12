@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -123,65 +123,61 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     transactions.filter((t) => t.type === 'STAND_RENT' && t.month === thisMonth && t.year === thisYear).length,
   [transactions, thisMonth, thisYear]);
 
-  const billingDue =
-    today.getDate() >= broker.billingDay && thisMonthStandRentCount === 0;
+  const daysInMonth  = new Date(thisYear, thisMonth, 0).getDate();
+  const billingDue   = today.getDate() >= broker.billingDay && thisMonthStandRentCount === 0;
+  const weeksInMonth = daysInMonth >= 29 ? 5 : 4;
+  const currentWeekNum = Math.min(Math.ceil(today.getDate() / 7), weeksInMonth);
 
-  const [generatingMonthly, setGeneratingMonthly] = useState(false);
-  const [showGeneratePreview, setShowGeneratePreview] = useState(false);
+  const [autoGenerating, setAutoGenerating] = useState(false);
+  const [autoGenBanner,  setAutoGenBanner]  = useState('');
+  const didAutoGen = useRef(false);
 
-  const generatePreviewItems = useMemo(() => {
-    const activeVehicles = broker.vehicles.filter((v) => v.isActive);
-    const vehicleCount   = activeVehicles.length || 1;
-    const items: { label: string; amount: number }[] = [];
-    for (let week = 1; week <= 4; week++) {
-      const rate = week === 1 ? 200 : 230;
-      items.push({
-        label:  `Week ${week} Stand Rent — ${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate}`,
-        amount: rate * vehicleCount,
-      });
+  useEffect(() => {
+    if (didAutoGen.current || !broker.isActive) return;
+    const existingCount = transactions.filter(
+      (t) => t.type === 'STAND_RENT' && t.month === thisMonth && t.year === thisYear && t.status !== 'VOID'
+    ).length;
+    if (existingCount < currentWeekNum) {
+      didAutoGen.current = true;
+      autoGenerateWeeks(existingCount + 1, currentWeekNum);
     }
-    const companyCabs = activeVehicles.filter((v) => v.isCompanyCar && v.insuranceAmount > 0);
-    for (const cab of companyCabs) {
-      items.push({ label: `Insurance — Cab #${cab.cabNumber}`, amount: cab.insuranceAmount });
-    }
-    return items;
-  }, [broker.vehicles]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  async function generateMonthlyCharges() {
-    setGeneratingMonthly(true); setTxError('');
+  async function autoGenerateWeeks(fromWeek: number, toWeek: number) {
+    setAutoGenerating(true);
+    setAutoGenBanner(`Auto-generating Week${fromWeek === toWeek ? ` ${fromWeek}` : `s ${fromWeek}–${toWeek}`} stand rent…`);
     try {
-      const activeVehicles = broker.vehicles.filter((v) => v.isActive);
-      const vehicleCount   = activeVehicles.length || 1;
-      const newTxs: Transaction[] = [];
+      const allCreated: Transaction[] = [];
+      const allEscalated: Transaction[] = [];
 
-      for (let week = 1; week <= 4; week++) {
-        const rate   = week === 1 ? 200 : 230;
-        const amount = rate * vehicleCount;
-        const desc   = `Week ${week} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`;
-        const res = await fetch(`/api/brokers/${broker.id}/transactions`, {
+      for (let w = fromWeek; w <= toWeek; w++) {
+        const res = await fetch(`/api/brokers/${broker.id}/generate-week`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'STAND_RENT', amount, description: desc, month: thisMonth, year: thisYear }),
+          body: JSON.stringify({ month: thisMonth, year: thisYear, weekNumber: w }),
         });
-        if (res.ok) newTxs.push(await res.json());
+        if (res.ok) {
+          const data = await res.json();
+          allCreated.push(...data.created);
+          allEscalated.push(...data.escalated);
+        }
       }
 
-      // Auto-add insurance for company-subleased vehicles
-      const companyCabs = activeVehicles.filter((v) => v.isCompanyCar && v.insuranceAmount > 0);
-      for (const cab of companyCabs) {
-        const res = await fetch(`/api/brokers/${broker.id}/transactions`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'INSURANCE', amount: cab.insuranceAmount,
-            description: `Insurance – Cab #${cab.cabNumber}`,
-            month: thisMonth, year: thisYear,
-          }),
-        });
-        if (res.ok) newTxs.push(await res.json());
-      }
+      setTransactions((prev) => {
+        // Replace escalated transactions with updated versions
+        const escalatedMap = new Map(allEscalated.map((t) => [t.id, t]));
+        const updated = prev.map((t) => escalatedMap.get(t.id) ?? t);
+        return [...allCreated.reverse(), ...updated];
+      });
 
-      setTransactions((prev) => [...newTxs.reverse(), ...prev]);
-    } catch { setTxError('Network error'); }
-    finally { setGeneratingMonthly(false); }
+      const label = fromWeek === toWeek ? `Week ${fromWeek}` : `Weeks ${fromWeek}–${toWeek}`;
+      setAutoGenBanner(`✓ Auto-generated ${label} stand rent for ${MONTHS[thisMonth - 1]}`);
+      setTimeout(() => setAutoGenBanner(''), 5000);
+    } catch {
+      setAutoGenBanner('');
+    } finally {
+      setAutoGenerating(false);
+    }
   }
 
   // --- Broker edit ---
@@ -417,21 +413,8 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {billingDue && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setShowGeneratePreview(true)}
-                disabled={generatingMonthly}
-                className="bg-amber-500 hover:bg-amber-600 border-amber-500"
-              >
-                {generatingMonthly ? 'Generating…' : `⚡ Generate ${MONTHS[thisMonth - 1]} Charges`}
-              </Button>
-            )}
-            {!billingDue && thisMonthStandRentCount === 0 && today.getDate() < broker.billingDay && (
-              <Button variant="secondary" size="sm" onClick={() => setShowGeneratePreview(true)} disabled={generatingMonthly}>
-                {generatingMonthly ? 'Generating…' : `Generate ${MONTHS[thisMonth - 1]} Charges`}
-              </Button>
+            {autoGenerating && (
+              <span className="text-xs text-amber-600 font-medium animate-pulse">⚡ Auto-generating…</span>
             )}
             <Button variant="ghost" size="sm" onClick={openEditBroker}>Edit</Button>
             <Button
@@ -481,6 +464,17 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
           </div>
         ))}
       </div>
+
+      {/* Auto-gen banner */}
+      {autoGenBanner && (
+        <div className={`rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-2 ${
+          autoGenBanner.startsWith('✓')
+            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+        }`}>
+          {autoGenBanner}
+        </div>
+      )}
 
       {/* Transactions section */}
       <div className="space-y-4">
@@ -788,52 +782,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         </div>
       </Modal>
 
-      {/* Generate Charges Preview Modal */}
-      <Modal open={showGeneratePreview} onClose={() => setShowGeneratePreview(false)} title={`Generate ${MONTHS[thisMonth - 1]} ${thisYear} Charges`}>
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            The following transactions will be created for <span className="font-semibold">{broker.name}</span>:
-          </p>
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Description</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-400">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {generatePreviewItems.map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-2.5 text-gray-700">{item.label}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{formatCurrency(item.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td className="px-4 py-2.5 font-semibold text-gray-700">Total</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-indigo-600">
-                    {formatCurrency(generatePreviewItems.reduce((s, item) => s + item.amount, 0))}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          {txError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{txError}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={() => setShowGeneratePreview(false)}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={() => { setShowGeneratePreview(false); generateMonthlyCharges(); }}
-              disabled={generatingMonthly}
-              className="bg-amber-500 hover:bg-amber-600 border-amber-500"
-            >
-              Confirm & Generate
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </>
   );
 }

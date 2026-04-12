@@ -1,6 +1,7 @@
 'use client';
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { format } from 'date-fns';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import Modal from '@/components/ui/Modal';
@@ -10,26 +11,40 @@ import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency } from '@/lib/tax';
 
 interface VehicleBroker { id: string; name: string; }
+interface Accident {
+  id: string; vehicleId: string; date: string; incidentNumber: string;
+  claimNumber: string; driver: string; settlementAmount: number | null; notes: string; createdAt: string;
+}
 interface Vehicle {
   id: string; cabNumber: string; brokerId: string | null; isCompanyCar: boolean;
   insuranceAmount: number; isActive: boolean; createdAt: string;
   broker: VehicleBroker | null;
+  accidents: Accident[];
 }
 interface Broker { id: string; name: string; }
 
 type Filter = 'all' | 'broker' | 'company';
 type ModalMode = 'add' | 'edit' | null;
 
-const EMPTY_FORM = { cabNumber: '', brokerId: '', isCompanyCar: false, insuranceAmount: '0' };
+const EMPTY_FORM      = { cabNumber: '', brokerId: '', isCompanyCar: false, insuranceAmount: '0' };
+const EMPTY_ACCIDENT  = { date: new Date().toISOString().split('T')[0], incidentNumber: '', claimNumber: '', driver: '', settlementAmount: '', notes: '' };
 
 export default function VehiclesClient({ initialVehicles, brokers }: { initialVehicles: Vehicle[]; brokers: Broker[] }) {
-  const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
-  const [modal,    setModal]    = useState<ModalMode>(null);
-  const [editing,  setEditing]  = useState<Vehicle | null>(null);
-  const [form,     setForm]     = useState(EMPTY_FORM);
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState('');
-  const [filter,   setFilter]   = useState<Filter>('all');
+  const [vehicles,       setVehicles]      = useState<Vehicle[]>(initialVehicles);
+  const [modal,          setModal]         = useState<ModalMode>(null);
+  const [editing,        setEditing]       = useState<Vehicle | null>(null);
+  const [form,           setForm]          = useState(EMPTY_FORM);
+  const [saving,         setSaving]        = useState(false);
+  const [error,          setError]         = useState('');
+  const [filter,         setFilter]        = useState<Filter>('all');
+  // Accident tracking
+  const [accidentVehicle,  setAccidentVehicle]  = useState<Vehicle | null>(null);
+  const [accidentModal,    setAccidentModal]    = useState<'add' | 'edit' | null>(null);
+  const [editingAccident,  setEditingAccident]  = useState<Accident | null>(null);
+  const [accidentForm,     setAccidentForm]     = useState(EMPTY_ACCIDENT);
+  const [savingAccident,   setSavingAccident]   = useState(false);
+  const [accidentError,    setAccidentError]    = useState('');
+  const [expandedAccidents, setExpandedAccidents] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     if (filter === 'broker')  return vehicles.filter((v) => !v.isCompanyCar);
@@ -94,6 +109,68 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
     }
   }
 
+  // --- Accident helpers ---
+  function toggleAccidentExpand(vehicleId: string) {
+    setExpandedAccidents(prev => {
+      const next = new Set(prev);
+      next.has(vehicleId) ? next.delete(vehicleId) : next.add(vehicleId);
+      return next;
+    });
+  }
+
+  function openAddAccident(v: Vehicle) {
+    setAccidentVehicle(v); setAccidentForm(EMPTY_ACCIDENT);
+    setEditingAccident(null); setAccidentError(''); setAccidentModal('add');
+  }
+
+  function openEditAccident(v: Vehicle, a: Accident) {
+    setAccidentVehicle(v);
+    setAccidentForm({
+      date:             a.date ? a.date.split('T')[0] : '',
+      incidentNumber:   a.incidentNumber,
+      claimNumber:      a.claimNumber,
+      driver:           a.driver,
+      settlementAmount: a.settlementAmount != null ? String(a.settlementAmount) : '',
+      notes:            a.notes,
+    });
+    setEditingAccident(a); setAccidentError(''); setAccidentModal('edit');
+  }
+
+  async function saveAccident() {
+    if (!accidentVehicle) return;
+    setSavingAccident(true); setAccidentError('');
+    try {
+      const payload = {
+        ...accidentForm,
+        settlementAmount: accidentForm.settlementAmount ? parseFloat(accidentForm.settlementAmount) : undefined,
+      };
+      const url    = accidentModal === 'edit' ? `/api/vehicles/accidents/${editingAccident!.id}` : `/api/vehicles/${accidentVehicle.id}/accidents`;
+      const method = accidentModal === 'edit' ? 'PUT' : 'POST';
+      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data   = await res.json();
+      if (!res.ok) { setAccidentError(data.error ?? 'Failed'); return; }
+      setVehicles(prev => prev.map(v => {
+        if (v.id !== accidentVehicle.id) return v;
+        const accidents = accidentModal === 'edit'
+          ? v.accidents.map(a => a.id === editingAccident!.id ? data : a)
+          : [data, ...v.accidents];
+        return { ...v, accidents };
+      }));
+      setAccidentModal(null);
+    } catch { setAccidentError('Network error'); }
+    finally { setSavingAccident(false); }
+  }
+
+  async function deleteAccident(v: Vehicle, accidentId: string) {
+    if (!confirm('Delete this accident record?')) return;
+    const res = await fetch(`/api/vehicles/accidents/${accidentId}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      setVehicles(prev => prev.map(x =>
+        x.id === v.id ? { ...x, accidents: x.accidents.filter(a => a.id !== accidentId) } : x
+      ));
+    }
+  }
+
   const filterLabels: { key: Filter; label: string }[] = [
     { key: 'all',     label: 'All' },
     { key: 'broker',  label: 'Broker Cars' },
@@ -149,41 +226,105 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filtered.map((v) => (
-                  <tr key={v.id} className="group hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-4 font-mono text-sm font-bold text-gray-900">#{v.cabNumber}</td>
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        v.isCompanyCar
-                          ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-600/20'
-                          : 'bg-gray-100 text-gray-600 ring-1 ring-gray-400/20'
-                      }`}>
-                        {v.isCompanyCar ? 'Company Car' : "Broker's Car"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-gray-700">
-                      {v.broker
-                        ? <Link href={`/brokers/${v.broker.id}`} className="font-medium text-indigo-600 hover:text-indigo-800">{v.broker.name}</Link>
-                        : <span className="text-gray-400">— Unassigned —</span>
-                      }
-                    </td>
-                    <td className="px-5 py-4 text-sm text-gray-700">
-                      {v.isCompanyCar && v.insuranceAmount > 0 ? formatCurrency(v.insuranceAmount) : <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="px-5 py-4">
-                      <Badge variant={v.isActive ? 'active' : 'inactive'} />
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(v)}>Edit</Button>
-                        <Button size="sm" variant="ghost" onClick={() => toggleActive(v)}
-                          className={v.isActive ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}>
-                          {v.isActive ? 'Deactivate' : 'Activate'}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deleteVehicle(v)}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
-                      </div>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={v.id} className="group hover:bg-gray-50 transition-colors">
+                      <td className="px-5 py-4 font-mono text-sm font-bold text-gray-900">#{v.cabNumber}</td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          v.isCompanyCar
+                            ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-600/20'
+                            : 'bg-gray-100 text-gray-600 ring-1 ring-gray-400/20'
+                        }`}>
+                          {v.isCompanyCar ? 'Company Car' : "Broker's Car"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-gray-700">
+                        {v.broker
+                          ? <Link href={`/brokers/${v.broker.id}`} className="font-medium text-indigo-600 hover:text-indigo-800">{v.broker.name}</Link>
+                          : <span className="text-gray-400">— Unassigned —</span>
+                        }
+                      </td>
+                      <td className="px-5 py-4 text-sm text-gray-700">
+                        {v.isCompanyCar && v.insuranceAmount > 0 ? formatCurrency(v.insuranceAmount) : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-5 py-4">
+                        <Badge variant={v.isActive ? 'active' : 'inactive'} />
+                        {v.isCompanyCar && v.accidents.length > 0 && (
+                          <button onClick={() => toggleAccidentExpand(v.id)}
+                            className="mt-0.5 block text-xs text-red-500 hover:underline">
+                            {v.accidents.length} accident{v.accidents.length !== 1 ? 's' : ''} {expandedAccidents.has(v.id) ? '▲' : '▼'}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button size="sm" variant="ghost" onClick={() => openEdit(v)}>Edit</Button>
+                          {v.isCompanyCar && (
+                            <Button size="sm" variant="ghost" onClick={() => { openAddAccident(v); setExpandedAccidents(p => new Set([...p, v.id])); }}
+                              className="text-red-600 hover:bg-red-50">+ Accident</Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => toggleActive(v)}
+                            className={v.isActive ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}>
+                            {v.isActive ? 'Deactivate' : 'Activate'}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => deleteVehicle(v)}
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
+                        </div>
+                      </td>
+                    </tr>
+                    {/* Accident sub-rows for company cars */}
+                    {v.isCompanyCar && expandedAccidents.has(v.id) && (
+                      <tr key={`${v.id}-accidents`}>
+                        <td colSpan={6} className="bg-red-50 px-5 py-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <p className="text-xs font-bold uppercase tracking-widest text-red-400">Accident / Claim Records — Cab #{v.cabNumber}</p>
+                            <Button size="sm" variant="ghost" onClick={() => openAddAccident(v)}
+                              className="text-red-600 hover:bg-red-100 text-xs">+ Log Accident</Button>
+                          </div>
+                          {v.accidents.length === 0 ? (
+                            <p className="text-sm text-gray-400">No accidents logged.</p>
+                          ) : (
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-left text-xs font-semibold text-red-300 uppercase tracking-wide">
+                                  <th className="pb-1 pr-4">Date</th>
+                                  <th className="pb-1 pr-4">Incident #</th>
+                                  <th className="pb-1 pr-4">Claim #</th>
+                                  <th className="pb-1 pr-4">Driver</th>
+                                  <th className="pb-1 pr-4">Settlement</th>
+                                  <th className="pb-1" />
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-red-100">
+                                {v.accidents.map(a => (
+                                  <tr key={a.id} className="group/acc">
+                                    <td className="py-1.5 pr-4 text-gray-600 whitespace-nowrap">{format(new Date(a.date), 'MMM d, yyyy')}</td>
+                                    <td className="py-1.5 pr-4 font-mono text-gray-700">{a.incidentNumber || '—'}</td>
+                                    <td className="py-1.5 pr-4 font-mono text-gray-500">{a.claimNumber || <span className="text-gray-300 italic">pending</span>}</td>
+                                    <td className="py-1.5 pr-4 text-gray-600">{a.driver || '—'}</td>
+                                    <td className="py-1.5 pr-4 font-semibold">
+                                      {a.settlementAmount != null
+                                        ? <span className="text-emerald-700">{formatCurrency(a.settlementAmount)}</span>
+                                        : <span className="text-amber-500 text-xs">Pending</span>
+                                      }
+                                    </td>
+                                    <td className="py-1.5">
+                                      <div className="flex gap-1 opacity-0 group-hover/acc:opacity-100">
+                                        <Button size="sm" variant="ghost" onClick={() => openEditAccident(v, a)}
+                                          className="text-xs">Edit</Button>
+                                        <Button size="sm" variant="ghost" onClick={() => deleteAccident(v, a.id)}
+                                          className="text-xs text-red-500 hover:bg-red-100">Delete</Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
@@ -252,6 +393,70 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
             <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>
             <Button variant="primary" onClick={save} disabled={saving || !form.cabNumber}>
               {saving ? 'Saving…' : modal === 'edit' ? 'Save Changes' : 'Add Vehicle'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Log / Edit Accident Modal */}
+      <Modal
+        open={accidentModal !== null}
+        onClose={() => setAccidentModal(null)}
+        title={accidentModal === 'edit' ? `Edit Accident — Cab #${accidentVehicle?.cabNumber}` : `Log Accident — Cab #${accidentVehicle?.cabNumber}`}
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <input type="date" value={accidentForm.date}
+                onChange={e => setAccidentForm(f => ({ ...f, date: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <Input label="Driver" placeholder="Driver name"
+              value={accidentForm.driver}
+              onChange={e => setAccidentForm(f => ({ ...f, driver: e.target.value }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Incident #" placeholder="INC-2026-04"
+              value={accidentForm.incidentNumber}
+              onChange={e => setAccidentForm(f => ({ ...f, incidentNumber: e.target.value }))}
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Claim #
+                <span className="ml-1 text-xs font-normal text-gray-400">(optional — add later)</span>
+              </label>
+              <input type="text" value={accidentForm.claimNumber} placeholder="CLM-9921"
+                onChange={e => setAccidentForm(f => ({ ...f, claimNumber: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Settlement Amount ($)
+              <span className="ml-1 text-xs font-normal text-gray-400">(leave blank until settled)</span>
+            </label>
+            <input type="number" min={0} step={0.01} value={accidentForm.settlementAmount} placeholder="0.00"
+              onChange={e => setAccidentForm(f => ({ ...f, settlementAmount: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <input type="text" value={accidentForm.notes} placeholder="Optional notes…"
+              onChange={e => setAccidentForm(f => ({ ...f, notes: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          {accidentError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{accidentError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setAccidentModal(null)}>Cancel</Button>
+            <Button variant="primary" onClick={saveAccident}
+              disabled={savingAccident || !accidentForm.incidentNumber || !accidentForm.date}>
+              {savingAccident ? 'Saving…' : accidentModal === 'edit' ? 'Save Changes' : 'Log Accident'}
             </Button>
           </div>
         </div>
