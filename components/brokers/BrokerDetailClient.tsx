@@ -18,14 +18,11 @@ interface Transaction {
 }
 
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
-interface BrokerExpense  { id: string; cabNumber: string; date: string; amount: number; note: string; createdAt: string; }
-
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
   vehicles: BrokerVehicle[];
-  expenses: BrokerExpense[];
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -80,11 +77,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [brokerError,   setBrokerError]  = useState('');
   const [filterMonth,   setFilterMonth]  = useState('');
   const [filterYear,    setFilterYear]   = useState('');
-  const [expenses,     setExpenses]     = useState<BrokerExpense[]>(initial.expenses ?? []);
-  const [showAddExp,   setShowAddExp]   = useState(false);
-  const [expForm,      setExpForm]      = useState({ cabNumber: '', date: new Date().toISOString().split('T')[0], amount: '', note: '' });
-  const [savingExp,    setSavingExp]    = useState(false);
-  const [expError,     setExpError]     = useState('');
 
   const today = new Date();
   const thisMonth = today.getMonth() + 1;
@@ -341,32 +333,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     }
   }
 
-  function openAddExp() {
-    setExpForm({ cabNumber: '', date: new Date().toISOString().split('T')[0], amount: '', note: '' });
-    setExpError(''); setShowAddExp(true);
-  }
-
-  async function saveExp() {
-    setSavingExp(true); setExpError('');
-    try {
-      const res  = await fetch(`/api/brokers/${broker.id}/expenses`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...expForm, amount: parseFloat(expForm.amount) || 0 }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setExpError(data.error ?? 'Failed'); return; }
-      setExpenses((prev) => [data, ...prev]);
-      setShowAddExp(false);
-    } catch { setExpError('Network error'); }
-    finally { setSavingExp(false); }
-  }
-
-  async function deleteExp(expId: string) {
-    if (!confirm('Delete this expense?')) return;
-    const res = await fetch(`/api/brokers/expenses/${expId}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) setExpenses((prev) => prev.filter((e) => e.id !== expId));
-  }
-
   const txField = (key: keyof typeof EMPTY_TX) => ({
     value: txForm[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -580,107 +546,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
           </div>
         )}
       </div>
-
-      {/* Expenses */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Expenses</h2>
-          <Button variant="secondary" onClick={openAddExp}>+ Add Expense</Button>
-        </div>
-        {expenses.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-10 text-center">
-            <p className="text-sm font-semibold text-gray-900">No expenses</p>
-            <p className="mt-1 text-xs text-gray-500">Log expenses when the broker takes something from the company.</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date', 'Cab #', 'Amount', 'Note', ''].map((h) => (
-                    <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {expenses.map((e) => (
-                  <tr key={e.id} className="group hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3.5 text-sm text-gray-600 whitespace-nowrap">
-                      {new Date(e.date).toLocaleDateString('en-CA')}
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-sm text-gray-700">{e.cabNumber || '—'}</td>
-                    <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(e.amount)}</td>
-                    <td className="px-4 py-3.5 text-sm text-gray-600 max-w-[220px] truncate">{e.note || '—'}</td>
-                    <td className="px-4 py-3.5">
-                      <Button size="sm" variant="ghost" onClick={() => deleteExp(e.id)}
-                        className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Add Expense Modal */}
-      <Modal open={showAddExp} onClose={() => setShowAddExp(false)} title="Add Expense">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Cab #</label>
-              {broker.vehicles.length > 0 ? (
-                <select
-                  value={expForm.cabNumber}
-                  onChange={(e) => setExpForm((f) => ({ ...f, cabNumber: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">— Select cab —</option>
-                  {broker.vehicles.map((v) => <option key={v.id} value={v.cabNumber}>#{v.cabNumber}</option>)}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={expForm.cabNumber}
-                  onChange={(e) => setExpForm((f) => ({ ...f, cabNumber: e.target.value }))}
-                  placeholder="e.g. 11"
-                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-              <input type="date" value={expForm.date}
-                onChange={(e) => setExpForm((f) => ({ ...f, date: e.target.value }))}
-                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
-            <input type="number" min={0} step={0.01} value={expForm.amount}
-              onChange={(e) => setExpForm((f) => ({ ...f, amount: e.target.value }))}
-              placeholder="0.00"
-              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-            <input type="text" value={expForm.note}
-              onChange={(e) => setExpForm((f) => ({ ...f, note: e.target.value }))}
-              placeholder="What did the broker take?"
-              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          {expError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{expError}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setShowAddExp(false)}>Cancel</Button>
-            <Button variant="primary" onClick={saveExp} disabled={savingExp || !expForm.amount || !expForm.date}>
-              {savingExp ? 'Saving…' : 'Add Expense'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       {/* Add Transaction Modal */}
       <Modal open={showAddTx} onClose={() => setShowAddTx(false)} title="Add Transaction" size="lg">
