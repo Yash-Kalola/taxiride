@@ -36,10 +36,10 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
 
     await prisma.ride.delete({ where: { id: params.id } });
 
-    // If this ride belonged to an invoice, recalculate the invoice totals
+    // If this ride belonged to an invoice, recalculate the invoice totals (excluding voided)
     if (ride.invoiceId) {
       const remainingRides = await prisma.ride.findMany({
-        where: { invoiceId: ride.invoiceId },
+        where: { invoiceId: ride.invoiceId, voided: false },
         select: { amount: true },
       });
       const newTotal = remainingRides.reduce((s, r) => s + r.amount, 0);

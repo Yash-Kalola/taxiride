@@ -8,7 +8,7 @@ import Input from '@/components/ui/Input';
 import { formatCurrency } from '@/lib/tax';
 
 interface Company { companyName: string; address: string; poNumber: string; email: string; }
-interface Ride { id: string; dateTime: string; pickupLocation: string; dropoffLocation: string; vehicleNumber: string; amount: number; }
+interface Ride { id: string; dateTime: string; pickupLocation: string; dropoffLocation: string; vehicleNumber: string; amount: number; voided: boolean; }
 interface Invoice {
   id: string; invoiceNumber: number; month: string; year: number;
   amountPreTax: number; hst: number; total: number;
@@ -19,12 +19,14 @@ interface Invoice {
 
 export default function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) {
   const router = useRouter();
-  const [invoice, setInvoice]   = useState(initial);
-  const [notes,   setNotes]     = useState(initial.notes ?? '');
+  const [invoice,   setInvoice]   = useState(initial);
+  const [rides,     setRides]     = useState<Ride[]>(initial.rides);
+  const [notes,     setNotes]     = useState(initial.notes ?? '');
   const [saving,    setSaving]    = useState(false);
   const [sending,   setSending]   = useState(false);
   const [resending, setResending] = useState(false);
   const [deleting,  setDeleting]  = useState(false);
+  const [voidingId, setVoidingId] = useState<string | null>(null);
   const [msg,       setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   async function save() {
@@ -87,6 +89,30 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     const res = await fetch(`/api/invoices/${invoice.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'PAID' }) });
     if (res.ok) setInvoice((prev) => ({ ...prev, status: 'PAID' }));
   }
+
+  async function voidRide(rideId: string) {
+    setVoidingId(rideId);
+    try {
+      const res  = await fetch(`/api/rides/${rideId}/void`, { method: 'PATCH' });
+      const data = await res.json();
+      if (!res.ok) { setMsg({ type: 'err', text: data.error ?? 'Failed to void ride.' }); return; }
+      // Update ride voided status
+      setRides((prev) => prev.map((r) => r.id === rideId ? { ...r, voided: data.ride.voided } : r));
+      // Update invoice totals
+      if (data.invoice) {
+        setInvoice((prev) => ({
+          ...prev,
+          amountPreTax: data.invoice.amountPreTax,
+          hst:          data.invoice.hst,
+          total:        data.invoice.total,
+        }));
+      }
+    } catch { setMsg({ type: 'err', text: 'Network error.' }); }
+    finally { setVoidingId(null); }
+  }
+
+  const voidedCount  = rides.filter((r) => r.voided).length;
+  const activeRides  = rides.filter((r) => !r.voided);
 
   const sv = invoice.flagged && !invoice.verified ? 'flagged' : invoice.status === 'PAID' ? 'paid' : invoice.status === 'DRAFT' ? 'draft' : 'pending';
 
@@ -197,27 +223,52 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
       </div>
 
       {/* Rides */}
-      {invoice.rides.length > 0 && (
+      {rides.length > 0 && (
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <p className="text-sm font-semibold text-gray-900">Rides ({invoice.rides.length})</p>
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold text-gray-900">
+                Rides ({activeRides.length} active{voidedCount > 0 ? `, ${voidedCount} voided` : ''})
+              </p>
+              {voidedCount > 0 && (
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 ring-1 ring-red-200">
+                  {voidedCount} ride{voidedCount !== 1 ? 's' : ''} voided — excluded from invoice
+                </span>
+              )}
+            </div>
           </div>
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {['Date/Time', 'Pickup', 'Dropoff', 'Cab #', 'Amount'].map((h) => (
+                {['Date/Time', 'Pickup', 'Dropoff', 'Cab #', 'Amount', ''].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {invoice.rides.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-3 text-sm text-gray-600">{r.dateTime || '—'}</td>
-                  <td className="px-5 py-3 text-sm text-gray-600 max-w-[160px] truncate">{r.pickupLocation || '—'}</td>
-                  <td className="px-5 py-3 text-sm text-gray-600 max-w-[160px] truncate">{r.dropoffLocation || '—'}</td>
-                  <td className="px-5 py-3 text-sm font-mono text-gray-600">{r.vehicleNumber || '—'}</td>
-                  <td className="px-5 py-3 text-sm font-semibold text-gray-900">{formatCurrency(r.amount)}</td>
+              {rides.map((r) => (
+                <tr key={r.id} className={`group transition-colors ${r.voided ? 'bg-red-50/40 opacity-60' : 'hover:bg-gray-50'}`}>
+                  <td className={`px-5 py-3 text-sm text-gray-600 ${r.voided ? 'line-through' : ''}`}>{r.dateTime || '—'}</td>
+                  <td className={`px-5 py-3 text-sm text-gray-600 max-w-[160px] truncate ${r.voided ? 'line-through' : ''}`}>{r.pickupLocation || '—'}</td>
+                  <td className={`px-5 py-3 text-sm text-gray-600 max-w-[160px] truncate ${r.voided ? 'line-through' : ''}`}>{r.dropoffLocation || '—'}</td>
+                  <td className={`px-5 py-3 text-sm font-mono text-gray-600 ${r.voided ? 'line-through' : ''}`}>{r.vehicleNumber || '—'}</td>
+                  <td className={`px-5 py-3 text-sm font-semibold ${r.voided ? 'text-red-400 line-through' : 'text-gray-900'}`}>
+                    {r.voided && <span className="mr-1.5 text-xs font-bold text-red-500 not-italic no-underline" style={{ textDecoration: 'none' }}>VOID</span>}
+                    {formatCurrency(r.amount)}
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => voidRide(r.id)}
+                      disabled={voidingId === r.id}
+                      className={`opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium px-2 py-1 rounded-md ${
+                        r.voided
+                          ? 'text-emerald-600 hover:bg-emerald-50 border border-emerald-200'
+                          : 'text-red-600 hover:bg-red-50 border border-red-200'
+                      } disabled:opacity-40`}
+                    >
+                      {voidingId === r.id ? '…' : r.voided ? 'Unvoid' : 'Void'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

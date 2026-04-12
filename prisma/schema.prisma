@@ -32,6 +32,7 @@ model Ride {
   driver          String    @default("")
   dateTime        String    @default("")
   amount          Float     @default(0)
+  voided          Boolean   @default(false)
   month           String
   year            Int
   companyId       String
