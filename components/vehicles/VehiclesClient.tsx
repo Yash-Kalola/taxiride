@@ -15,11 +15,16 @@ interface Accident {
   id: string; vehicleId: string; date: string; incidentNumber: string;
   claimNumber: string; driver: string; settlementAmount: number | null; notes: string; createdAt: string;
 }
+interface VehicleDoc {
+  id: string; vehicleId: string; label: string; fileName: string;
+  filePath: string; fileType: string; fileSize: number; createdAt: string;
+}
 interface Vehicle {
   id: string; cabNumber: string; brokerId: string | null; isCompanyCar: boolean;
   insuranceAmount: number; isActive: boolean; createdAt: string;
   broker: VehicleBroker | null;
   accidents: Accident[];
+  documents: VehicleDoc[];
 }
 interface Broker { id: string; name: string; }
 
@@ -45,6 +50,14 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
   const [savingAccident,   setSavingAccident]   = useState(false);
   const [accidentError,    setAccidentError]    = useState('');
   const [expandedAccidents, setExpandedAccidents] = useState<Set<string>>(new Set());
+  // Document uploads
+  const [expandedDocs,    setExpandedDocs]    = useState<Set<string>>(new Set());
+  const [docVehicle,      setDocVehicle]      = useState<Vehicle | null>(null);
+  const [showDocModal,    setShowDocModal]    = useState(false);
+  const [docLabel,        setDocLabel]        = useState('');
+  const [docFile,         setDocFile]         = useState<File | null>(null);
+  const [savingDoc,       setSavingDoc]       = useState(false);
+  const [docError,        setDocError]        = useState('');
 
   const filtered = useMemo(() => {
     if (filter === 'broker')  return vehicles.filter((v) => !v.isCompanyCar);
@@ -171,6 +184,53 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
     }
   }
 
+  // --- Document helpers ---
+  function toggleDocExpand(vehicleId: string) {
+    setExpandedDocs(prev => {
+      const next = new Set(prev);
+      next.has(vehicleId) ? next.delete(vehicleId) : next.add(vehicleId);
+      return next;
+    });
+  }
+
+  function openAddDoc(v: Vehicle) {
+    setDocVehicle(v); setDocLabel(''); setDocFile(null); setDocError(''); setShowDocModal(true);
+  }
+
+  async function saveDoc() {
+    if (!docVehicle || !docFile) { setDocError('Please select a file.'); return; }
+    setSavingDoc(true); setDocError('');
+    try {
+      const fd = new FormData();
+      fd.append('file',  docFile);
+      fd.append('label', docLabel);
+      const res  = await fetch(`/api/vehicles/${docVehicle.id}/documents`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) { setDocError(data.error ?? 'Upload failed'); return; }
+      setVehicles(prev => prev.map(v =>
+        v.id === docVehicle.id ? { ...v, documents: [data, ...v.documents] } : v
+      ));
+      setShowDocModal(false);
+    } catch { setDocError('Network error'); }
+    finally { setSavingDoc(false); }
+  }
+
+  async function deleteDoc(v: Vehicle, docId: string) {
+    if (!confirm('Delete this document?')) return;
+    const res = await fetch(`/api/vehicles/documents/${docId}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      setVehicles(prev => prev.map(x =>
+        x.id === v.id ? { ...x, documents: x.documents.filter(d => d.id !== docId) } : x
+      ));
+    }
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024)       return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   const filterLabels: { key: Filter; label: string }[] = [
     { key: 'all',     label: 'All' },
     { key: 'broker',  label: 'Broker Cars' },
@@ -255,6 +315,12 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                             {v.accidents.length} accident{v.accidents.length !== 1 ? 's' : ''} {expandedAccidents.has(v.id) ? '▲' : '▼'}
                           </button>
                         )}
+                        {v.documents.length > 0 && (
+                          <button onClick={() => toggleDocExpand(v.id)}
+                            className="mt-0.5 block text-xs text-indigo-500 hover:underline">
+                            {v.documents.length} doc{v.documents.length !== 1 ? 's' : ''} {expandedDocs.has(v.id) ? '▲' : '▼'}
+                          </button>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -263,6 +329,8 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                             <Button size="sm" variant="ghost" onClick={() => { openAddAccident(v); setExpandedAccidents(p => new Set([...p, v.id])); }}
                               className="text-red-600 hover:bg-red-50">+ Accident</Button>
                           )}
+                          <Button size="sm" variant="ghost" onClick={() => { openAddDoc(v); setExpandedDocs(p => new Set([...p, v.id])); }}
+                            className="text-indigo-600 hover:bg-indigo-50">+ Doc</Button>
                           <Button size="sm" variant="ghost" onClick={() => toggleActive(v)}
                             className={v.isActive ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}>
                             {v.isActive ? 'Deactivate' : 'Activate'}
@@ -272,6 +340,44 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                         </div>
                       </td>
                     </tr>
+                    {/* Documents sub-row (all vehicles) */}
+                    {expandedDocs.has(v.id) && (
+                      <tr key={`${v.id}-docs`}>
+                        <td colSpan={6} className="bg-indigo-50 px-5 py-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Documents — Cab #{v.cabNumber}</p>
+                            <Button size="sm" variant="ghost" onClick={() => openAddDoc(v)}
+                              className="text-indigo-600 hover:bg-indigo-100 text-xs">+ Upload Document</Button>
+                          </div>
+                          {v.documents.length === 0 ? (
+                            <p className="text-sm text-gray-400">No documents uploaded yet.</p>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {v.documents.map(d => (
+                                <div key={d.id} className="flex items-center justify-between rounded-lg bg-white border border-indigo-100 px-3 py-2">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <svg className="w-5 h-5 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                    </svg>
+                                    <div className="min-w-0">
+                                      {d.label && <p className="text-xs font-semibold text-gray-700">{d.label}</p>}
+                                      <p className="text-xs text-gray-500 truncate">{d.fileName}</p>
+                                      <p className="text-xs text-gray-400">{formatFileSize(d.fileSize)} · {format(new Date(d.createdAt), 'MMM d, yyyy')}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                                    <a href={d.filePath} target="_blank" rel="noopener noreferrer"
+                                      className="text-xs text-indigo-600 hover:underline font-medium">Download</a>
+                                    <Button size="sm" variant="ghost" onClick={() => deleteDoc(v, d.id)}
+                                      className="text-xs text-red-500 hover:bg-red-50">Delete</Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                     {/* Accident sub-rows for company cars */}
                     {v.isCompanyCar && expandedAccidents.has(v.id) && (
                       <tr key={`${v.id}-accidents`}>
@@ -457,6 +563,38 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
             <Button variant="primary" onClick={saveAccident}
               disabled={savingAccident || !accidentForm.incidentNumber || !accidentForm.date}>
               {savingAccident ? 'Saving…' : accidentModal === 'edit' ? 'Save Changes' : 'Log Accident'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Upload Document Modal */}
+      <Modal open={showDocModal} onClose={() => setShowDocModal(false)} title={`Upload Document — Cab #${docVehicle?.cabNumber}`}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Label <span className="text-xs font-normal text-gray-400">(e.g. License, Ownership, Insurance)</span>
+            </label>
+            <input type="text" value={docLabel} placeholder="e.g. License"
+              onChange={e => setDocLabel(e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+              onChange={e => setDocFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+            />
+            {docFile && <p className="mt-1 text-xs text-gray-400">{docFile.name} · {formatFileSize(docFile.size)}</p>}
+          </div>
+          {docError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{docError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowDocModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={saveDoc} disabled={savingDoc || !docFile}>
+              {savingDoc ? 'Uploading…' : 'Upload'}
             </Button>
           </div>
         </div>

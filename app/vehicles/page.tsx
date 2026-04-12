@@ -10,7 +10,7 @@ export default async function VehiclesPage() {
     [vehiclesRaw, brokers] = await Promise.all([
       prisma.brokerVehicle.findMany({
         orderBy: { cabNumber: 'asc' },
-        include: { broker: { select: { id: true, name: true } }, accidents: { orderBy: { date: 'desc' } } },
+        include: { broker: { select: { id: true, name: true } }, accidents: { orderBy: { date: 'desc' } }, documents: { orderBy: { createdAt: 'desc' } } },
       }),
       prisma.broker.findMany({
         where: { isActive: true },

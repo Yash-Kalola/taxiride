@@ -84,18 +84,19 @@ enum TransactionStatus {
 }
 
 model Broker {
-  id           String              @id @default(cuid())
-  name         String
-  phone        String              @default("")
-  billingDay   Int                 @default(1)    // day of month (1–31) when monthly charges auto-generate
-  startDate    DateTime
-  endDate      DateTime?
-  isActive     Boolean             @default(true)
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  transactions BrokerTransaction[]
-  vehicles     BrokerVehicle[]
-  expenses     BrokerExpense[]
+  id              String              @id @default(cuid())
+  name            String
+  phone           String              @default("")
+  billingDay      Int                 @default(1)    // day of month (1–31) when monthly charges auto-generate
+  standRentAmount Float               @default(200)  // weekly stand rent base rate per vehicle
+  startDate       DateTime
+  endDate         DateTime?
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  transactions    BrokerTransaction[]
+  vehicles        BrokerVehicle[]
+  expenses        BrokerExpense[]
 }
 
 model BrokerTransaction {
@@ -115,16 +116,29 @@ model BrokerTransaction {
 }
 
 model BrokerVehicle {
-  id              String            @id @default(cuid())
+  id              String              @id @default(cuid())
   cabNumber       String
   brokerId        String?
-  broker          Broker?           @relation(fields: [brokerId], references: [id], onDelete: SetNull)
-  isCompanyCar    Boolean           @default(false)
-  insuranceAmount Float             @default(0)
-  isActive        Boolean           @default(true)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  broker          Broker?             @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+  isCompanyCar    Boolean             @default(false)
+  insuranceAmount Float               @default(0)
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
   accidents       VehicleAccident[]
+  documents       VehicleDocument[]
+}
+
+model VehicleDocument {
+  id        String        @id @default(cuid())
+  vehicleId String
+  vehicle   BrokerVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  label     String        @default("")
+  fileName  String
+  filePath  String
+  fileType  String        @default("")
+  fileSize  Int           @default(0)
+  createdAt DateTime      @default(now())
 }
 
 model VehicleAccident {

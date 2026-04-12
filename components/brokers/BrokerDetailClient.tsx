@@ -21,7 +21,7 @@ interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; 
 interface BrokerExpense  { id: string; cabNumber: string; date: string; amount: number; note: string; createdAt: string; }
 
 interface Broker {
-  id: string; name: string; phone: string; billingDay: number;
+  id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
   vehicles: BrokerVehicle[];
@@ -55,7 +55,7 @@ const EMPTY_TX = {
   year:  String(new Date().getFullYear()),
 };
 
-const EMPTY_BROKER = { name: '', phone: '', billingDay: '1', startDate: '' };
+const EMPTY_BROKER = { name: '', phone: '', billingDay: '1', standRentAmount: '200', startDate: '' };
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -183,10 +183,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   // --- Broker edit ---
   function openEditBroker() {
     setBrokerForm({
-      name:       broker.name,
-      phone:      broker.phone,
-      billingDay: String(broker.billingDay),
-      startDate:  broker.startDate ? broker.startDate.split('T')[0] : '',
+      name:            broker.name,
+      phone:           broker.phone,
+      billingDay:      String(broker.billingDay),
+      standRentAmount: String(broker.standRentAmount ?? 200),
+      startDate:       broker.startDate ? broker.startDate.split('T')[0] : '',
     });
     setBrokerError(''); setShowEdit(true);
   }
@@ -194,7 +195,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   async function saveBroker() {
     setSavingBroker(true); setBrokerError('');
     try {
-      const payload = { ...brokerForm, billingDay: parseInt(brokerForm.billingDay) || 1 };
+      // Only send charge-related fields — identity fields (name/phone/startDate) are locked
+      const payload = {
+        billingDay:      parseInt(brokerForm.billingDay) || 1,
+        standRentAmount: parseFloat(brokerForm.standRentAmount) || 200,
+      };
       const res  = await fetch(`/api/brokers/${broker.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) { setBrokerError(data.error ?? 'Failed'); return; }
@@ -269,7 +274,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       const newTxs: Transaction[] = [];
 
       for (let week = 1; week <= 4; week++) {
-        const rate   = week === 1 ? 200 : 230;
+        const rate   = broker.standRentAmount;
         const amount = rate * vehicleCount;
         const desc   = `Week ${week} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`;
         const res = await fetch(`/api/brokers/${broker.id}/transactions`, {
@@ -371,7 +376,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         // Auto-fill amount when switching to STAND_RENT
         if (key === 'type' && val === 'STAND_RENT') {
           const vehicleCount = broker.vehicles.filter((v) => v.isActive).length || 1;
-          updated.amount = String(200 * vehicleCount);
+          updated.amount = String(broker.standRentAmount * vehicleCount);
         }
         return updated;
       });
@@ -410,6 +415,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                 🗓 Billing: {ordinal(broker.billingDay)} of each month
                 {billingDue && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">Due</span>}
               </span>
+              <span>💵 Stand rent: ${broker.standRentAmount}/cab/week</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -745,19 +751,38 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         </div>
       </Modal>
 
-      {/* Edit Broker Modal */}
+      {/* Edit Broker Modal — only charge settings are editable */}
       <Modal open={showEditBroker} onClose={() => setShowEdit(false)} title="Edit Broker">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Name" placeholder="John Smith" {...brokerField('name')} />
-            <Input label="Phone" placeholder="+1 (705) 555-0123" {...brokerField('phone')} />
+          {/* Read-only identity info */}
+          <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Broker Info (read-only)</p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+              <div><span className="text-gray-500">Name</span><p className="font-semibold text-gray-900">{broker.name}</p></div>
+              <div><span className="text-gray-500">Phone</span><p className="font-semibold text-gray-900">{broker.phone || '—'}</p></div>
+              <div><span className="text-gray-500">Start Date</span><p className="font-semibold text-gray-900">{broker.startDate ? format(new Date(broker.startDate), 'MMM d, yyyy') : '—'}</p></div>
+            </div>
           </div>
+
+          {/* Editable charge settings */}
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Start Date" type="date" {...brokerField('startDate')} />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Monthly Billing Day
-                <span className="ml-1 text-xs font-normal text-gray-400">(1–31, day charges auto-generate)</span>
+                Weekly Stand Rent <span className="text-xs font-normal text-gray-400">($/vehicle/week)</span>
+              </label>
+              <input
+                type="number" min={0} step={1}
+                value={brokerForm.standRentAmount}
+                onChange={(e) => setBrokerForm((f) => ({ ...f, standRentAmount: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Late fee: ${Math.round((parseFloat(brokerForm.standRentAmount) || 200) * 1.15)}/vehicle (+15%)
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Monthly Billing Day <span className="text-xs font-normal text-gray-400">(1–31)</span>
               </label>
               <input
                 type="number" min={1} max={31}
@@ -767,15 +792,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               />
               {brokerForm.billingDay && (
                 <p className="mt-1 text-xs text-gray-400">
-                  Charges become due on the {ordinal(parseInt(brokerForm.billingDay) || 1)} of each month. The Generate button highlights amber on or after this day when no charges have been created yet.
+                  Due on the {ordinal(parseInt(brokerForm.billingDay) || 1)} of each month.
                 </p>
               )}
             </div>
           </div>
+
           {brokerError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{brokerError}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Button>
-            <Button variant="primary" onClick={saveBroker} disabled={savingBroker || !brokerForm.name}>
+            <Button variant="primary" onClick={saveBroker} disabled={savingBroker}>
               {savingBroker ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>

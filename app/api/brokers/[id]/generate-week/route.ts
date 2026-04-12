@@ -24,26 +24,30 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const activeVehicles = broker.vehicles;
     const vehicleCount   = activeVehicles.length || 1;
-    const rate           = 200;
+    const rate           = broker.standRentAmount;
+    const lateRate       = Math.round(rate * 1.15); // 15% late fee (e.g. $200 → $230)
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Escalate all PENDING stand rent for this month/year to $230 × vehicleCount
+      // 1. Escalate all PENDING stand rent for this month/year to lateRate × vehicleCount
       const pendingRent = await tx.brokerTransaction.findMany({
         where: { brokerId: params.id, type: 'STAND_RENT', month, year, status: 'PENDING' },
       });
       const escalatedIds: string[] = [];
       for (const t of pendingRent) {
-        const newAmount = 230 * vehicleCount;
+        const newAmount = lateRate * vehicleCount;
         if (t.amount !== newAmount) {
+          const newDesc = t.description.includes('— late')
+            ? t.description
+            : t.description.replace(/\$[\d.]+\)/, `$${lateRate}) — late`);
           await tx.brokerTransaction.update({
             where: { id: t.id },
-            data:  { amount: newAmount, description: t.description.replace(/\$200/, '$230').replace(/\$\d+\)/, '$230)') },
+            data:  { amount: newAmount, description: newDesc },
           });
           escalatedIds.push(t.id);
         }
       }
 
-      // 2. Create new stand rent for this week at $200
+      // 2. Create new stand rent for this week at fresh rate
       const newRent = await tx.brokerTransaction.create({
         data: {
           brokerId:    params.id,
