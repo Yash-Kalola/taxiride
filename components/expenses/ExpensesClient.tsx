@@ -22,6 +22,7 @@ interface Expense  {
 }
 
 const EMPTY_FORM = { brokerId: '', cabNumber: '', date: new Date().toISOString().split('T')[0], amount: '', note: '' };
+const EMPTY_EDIT = { cabNumber: '', date: '', amount: '', note: '' };
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024)        return `${bytes} B`;
@@ -36,6 +37,13 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
   const [saving,     setSaving]    = useState(false);
   const [error,      setError]     = useState('');
   const [filterBroker, setFilter]  = useState(initialBroker);
+
+  // Edit state
+  const [showEdit,    setShowEdit]   = useState(false);
+  const [editingExp,  setEditingExp] = useState<Expense | null>(null);
+  const [editForm,    setEditForm]   = useState(EMPTY_EDIT);
+  const [savingEdit,  setSavingEdit] = useState(false);
+  const [editError,   setEditError]  = useState('');
 
   // Attachment state
   const [attExpense,  setAttExpense]  = useState<Expense | null>(null);
@@ -71,6 +79,32 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
       setShowAdd(false);
     } catch { setError('Network error'); }
     finally { setSaving(false); }
+  }
+
+  function openEdit(e: Expense) {
+    setEditForm({
+      cabNumber: e.cabNumber || '',
+      date:      e.date ? e.date.split('T')[0] : '',
+      amount:    String(e.amount),
+      note:      e.note || '',
+    });
+    setEditingExp(e); setEditError(''); setShowEdit(true);
+  }
+
+  async function saveEdit() {
+    if (!editingExp) return;
+    setSavingEdit(true); setEditError('');
+    try {
+      const res  = await fetch(`/api/brokers/expenses/${editingExp.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...editForm, amount: parseFloat(editForm.amount) || 0 }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditError(data.error ?? 'Failed'); return; }
+      setExpenses(prev => prev.map(e => e.id === editingExp.id ? data : e));
+      setShowEdit(false);
+    } catch { setEditError('Network error'); }
+    finally { setSavingEdit(false); }
   }
 
   async function deleteExpense(id: string) {
@@ -185,10 +219,14 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
                       </button>
                     </td>
                     <td className="px-5 py-4">
-                      <Button size="sm" variant="ghost" onClick={() => deleteExpense(e.id)}
-                        className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">
-                        Delete
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(e)}
+                          className="opacity-0 group-hover:opacity-100">Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteExpense(e.id)}
+                          className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -271,6 +309,69 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
             <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
             <Button variant="primary" onClick={save} disabled={saving || !form.brokerId || !form.amount || !form.date}>
               {saving ? 'Saving…' : 'Add Expense'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Expense Modal */}
+      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Expense">
+        <div className="space-y-4">
+          {editingExp && (
+            <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Broker</p>
+              <p className="text-sm font-semibold text-gray-900">{editingExp.broker.name}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cab #</label>
+              {editingExp && brokers.find(b => b.id === editingExp.brokerId)?.vehicles.length ? (
+                <select
+                  value={editForm.cabNumber}
+                  onChange={e => setEditForm(f => ({ ...f, cabNumber: e.target.value }))}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">— Select cab —</option>
+                  {brokers.find(b => b.id === editingExp?.brokerId)?.vehicles.map(v => (
+                    <option key={v.id} value={v.cabNumber}>#{v.cabNumber}</option>
+                  ))}
+                </select>
+              ) : (
+                <input type="text" value={editForm.cabNumber}
+                  onChange={e => setEditForm(f => ({ ...f, cabNumber: e.target.value }))}
+                  placeholder="e.g. 11"
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <input type="date" value={editForm.date}
+                onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <Input label="Amount ($)" type="number" min={0} step={0.01} placeholder="0.00"
+            value={editForm.amount} onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} />
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+            <input type="text" value={editForm.note}
+              onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+              placeholder="What did the broker take?"
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          {editError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{editError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Button>
+            <Button variant="primary" onClick={saveEdit} disabled={savingEdit || !editForm.amount || !editForm.date}>
+              {savingEdit ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
         </div>

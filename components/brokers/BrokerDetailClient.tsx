@@ -10,6 +10,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { formatCurrency } from '@/lib/tax';
 import { MONTHS, YEARS } from '@/lib/constants';
+import { getCurrentWeekNum, getWeeksInMonth } from '@/lib/weeks';
 
 interface Transaction {
   id: string; brokerId: string; type: string; amount: number;
@@ -72,7 +73,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [brokerForm,    setBrokerForm]   = useState(EMPTY_BROKER);
   const [savingTx,      setSavingTx]     = useState(false);
   const [savingBroker,  setSavingBroker] = useState(false);
-  const [generatingWeekly, setGenWeekly] = useState(false);
   const [txError,       setTxError]      = useState('');
   const [brokerError,   setBrokerError]  = useState('');
   const [filterMonth,   setFilterMonth]  = useState('');
@@ -115,10 +115,9 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     transactions.filter((t) => t.type === 'STAND_RENT' && t.month === thisMonth && t.year === thisYear).length,
   [transactions, thisMonth, thisYear]);
 
-  const daysInMonth  = new Date(thisYear, thisMonth, 0).getDate();
-  const billingDue   = today.getDate() >= broker.billingDay && thisMonthStandRentCount === 0;
-  const weeksInMonth = daysInMonth >= 29 ? 5 : 4;
-  const currentWeekNum = Math.min(Math.ceil(today.getDate() / 7), weeksInMonth);
+  const weeksInMonth   = getWeeksInMonth(thisMonth, thisYear);
+  const currentWeekNum = getCurrentWeekNum(thisMonth, thisYear, today);
+  const billingDue     = today.getDate() >= broker.billingDay && thisMonthStandRentCount === 0;
 
   const [autoGenerating, setAutoGenerating] = useState(false);
   const [autoGenBanner,  setAutoGenBanner]  = useState('');
@@ -246,46 +245,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       setShowAddTx(false);
     } catch { setTxError('Network error'); }
     finally { setSavingTx(false); }
-  }
-
-  async function generateWeeklyStandRent() {
-    setGenWeekly(true); setTxError('');
-    try {
-      const month = parseInt(txForm.month);
-      const year  = parseInt(txForm.year);
-      const activeVehicles = broker.vehicles.filter((v) => v.isActive);
-      const vehicleCount   = activeVehicles.length || 1;
-      const newTxs: Transaction[] = [];
-
-      for (let week = 1; week <= 4; week++) {
-        const rate   = broker.standRentAmount;
-        const amount = rate * vehicleCount;
-        const desc   = `Week ${week} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`;
-        const res = await fetch(`/api/brokers/${broker.id}/transactions`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'STAND_RENT', amount, description: desc, month, year }),
-        });
-        if (res.ok) newTxs.push(await res.json());
-      }
-
-      // Auto-add insurance for company-subleased vehicles
-      const companyCabs = activeVehicles.filter((v) => v.isCompanyCar && v.insuranceAmount > 0);
-      for (const cab of companyCabs) {
-        const res = await fetch(`/api/brokers/${broker.id}/transactions`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'INSURANCE', amount: cab.insuranceAmount,
-            description: `Insurance – Cab #${cab.cabNumber}`,
-            month, year,
-          }),
-        });
-        if (res.ok) newTxs.push(await res.json());
-      }
-
-      setTransactions((prev) => [...newTxs.reverse(), ...prev]);
-      setShowAddTx(false);
-    } catch { setTxError('Network error'); }
-    finally { setGenWeekly(false); }
   }
 
   // --- Transaction actions ---
@@ -580,20 +539,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
 
           {txError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{txError}</p>}
 
-          <div className="flex justify-between items-center pt-2">
-            {/* Stand rent shortcut */}
-            {txForm.type === 'STAND_RENT' && (
-              <Button variant="secondary" onClick={generateWeeklyStandRent} disabled={generatingWeekly}>
-                {generatingWeekly ? 'Generating…' : 'Generate 4 Weekly Entries ($200 each)'}
-              </Button>
-            )}
-            {txForm.type !== 'STAND_RENT' && <div />}
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={() => setShowAddTx(false)}>Cancel</Button>
-              <Button variant="primary" onClick={saveTx} disabled={savingTx}>
-                {savingTx ? 'Saving…' : 'Add Transaction'}
-              </Button>
-            </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowAddTx(false)}>Cancel</Button>
+            <Button variant="primary" onClick={saveTx} disabled={savingTx}>
+              {savingTx ? 'Saving…' : 'Add Transaction'}
+            </Button>
           </div>
         </div>
       </Modal>
@@ -653,7 +603,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                 className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Late fee: ${Math.round((parseFloat(brokerForm.standRentAmount) || 200) * 1.15)}/vehicle (+15%)
+                Late fee: +$30/vehicle per unpaid week
               </p>
             </div>
             <div>

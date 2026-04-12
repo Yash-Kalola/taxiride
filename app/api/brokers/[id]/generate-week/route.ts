@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { formatWeekRange } from '@/lib/weeks';
 
 const schema = z.object({
   month:      z.number().int().min(1).max(12),
@@ -25,38 +26,34 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const activeVehicles = broker.vehicles;
     const vehicleCount   = activeVehicles.length || 1;
     const rate           = broker.standRentAmount;
-    const lateRate       = Math.round(rate * 1.15); // 15% late fee (e.g. $200 → $230)
+    const lateFee        = 30; // flat $30 per vehicle late fee
+
+    const weekLabel = formatWeekRange(weekNumber, month, year);
 
     const result = await prisma.$transaction(async (tx) => {
-      // Idempotency: if this week's stand rent already exists (non-void), skip silently
-      const alreadyExists = await tx.brokerTransaction.findFirst({
-        where: {
-          brokerId: params.id, type: 'STAND_RENT', month, year,
-          status: { not: 'VOID' },
-          description: { startsWith: `Week ${weekNumber} (` },
-        },
+      // Idempotency: count existing non-void STAND_RENT for this month/year
+      // If count >= weekNumber, this week has already been generated
+      const existingCount = await tx.brokerTransaction.count({
+        where: { brokerId: params.id, type: 'STAND_RENT', month, year, status: { not: 'VOID' } },
       });
-      if (alreadyExists) {
+      if (existingCount >= weekNumber) {
         return { created: [], escalatedIds: [], escalatedCount: 0, skipped: true };
       }
 
-      // 1. Escalate all PENDING stand rent for this month/year to lateRate × vehicleCount
+      // 1. Escalate all PENDING stand rent for this month/year: add flat $30 per vehicle
       const pendingRent = await tx.brokerTransaction.findMany({
         where: { brokerId: params.id, type: 'STAND_RENT', month, year, status: 'PENDING' },
       });
       const escalatedIds: string[] = [];
       for (const t of pendingRent) {
-        const newAmount = lateRate * vehicleCount;
-        if (t.amount !== newAmount) {
-          const newDesc = t.description.includes('— late')
-            ? t.description
-            : t.description.replace(/\$[\d.]+\)/, `$${lateRate}) — late`);
-          await tx.brokerTransaction.update({
-            where: { id: t.id },
-            data:  { amount: newAmount, description: newDesc },
-          });
-          escalatedIds.push(t.id);
-        }
+        if (t.description.includes('+ $30 late')) continue; // already escalated
+        const newAmount = t.amount + lateFee * vehicleCount;
+        const newDesc   = `${t.description} + $30 late`;
+        await tx.brokerTransaction.update({
+          where: { id: t.id },
+          data:  { amount: newAmount, description: newDesc },
+        });
+        escalatedIds.push(t.id);
       }
 
       // 2. Create new stand rent for this week at fresh rate
@@ -65,7 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           brokerId:    params.id,
           type:        'STAND_RENT',
           amount:      rate * vehicleCount,
-          description: `Week ${weekNumber} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`,
+          description: `${weekLabel} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`,
           month,
           year,
           status:      'PENDING',
