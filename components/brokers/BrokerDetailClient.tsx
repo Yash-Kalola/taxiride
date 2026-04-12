@@ -19,11 +19,13 @@ interface Transaction {
 }
 
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
+interface BrokerExpense { id: string; cabNumber: string; date: string; amount: number; note: string; }
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
   vehicles: BrokerVehicle[];
+  expenses: BrokerExpense[];
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -55,6 +57,7 @@ const EMPTY_TX = {
 
 const EMPTY_BROKER = { name: '', phone: '', billingDay: '1', standRentAmount: '200', startDate: '' };
 
+
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
@@ -83,9 +86,13 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const thisYear  = today.getFullYear();
 
   // Summary card computations
+  const totalExpenses = useMemo(() =>
+    broker.expenses.reduce((s, e) => s + e.amount, 0),
+  [broker.expenses]);
+
   const owedToUs = useMemo(() =>
-    transactions.filter((t) => t.type !== 'PAYOUT' && t.status === 'PENDING').reduce((s, t) => s + t.amount, 0),
-  [transactions]);
+    transactions.filter((t) => t.type !== 'PAYOUT' && t.status === 'PENDING').reduce((s, t) => s + t.amount, 0) + totalExpenses,
+  [transactions, totalExpenses]);
 
   const weOweThem = useMemo(() =>
     transactions.filter((t) => t.type === 'PAYOUT' && t.status === 'PENDING').reduce((s, t) => s + t.amount, 0),
@@ -178,8 +185,10 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   async function saveBroker() {
     setSavingBroker(true); setBrokerError('');
     try {
-      // Only send charge-related fields — identity fields (name/phone/startDate) are locked
       const payload = {
+        name:            brokerForm.name.trim() || broker.name,
+        phone:           brokerForm.phone.trim(),
+        startDate:       brokerForm.startDate || undefined,
         billingDay:      parseInt(brokerForm.billingDay) || 1,
         standRentAmount: parseFloat(brokerForm.standRentAmount) || 200,
       };
@@ -395,7 +404,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Owed To Us',           value: owedToUs,           color: 'text-indigo-600' },
+          { label: 'Owed To Us',           value: owedToUs,           color: 'text-indigo-600', sub: totalExpenses > 0 ? `incl. ${formatCurrency(totalExpenses)} expenses` : undefined },
           { label: 'We Owe Them',           value: weOweThem,          color: 'text-amber-600'  },
           { label: `Collected (${MONTHS[thisMonth - 1]})`, value: collectedThisMonth, color: 'text-emerald-600'},
           { label: `Paid Out (${MONTHS[thisMonth - 1]})`,  value: paidOutThisMonth,   color: 'text-rose-600'   },
@@ -403,6 +412,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
           <div key={c.label} className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-gray-200">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{c.label}</p>
             <p className={`mt-1.5 text-2xl font-bold ${c.color}`}>{formatCurrency(c.value)}</p>
+            {'sub' in c && c.sub && <p className="mt-0.5 text-xs text-gray-400">{c.sub}</p>}
           </div>
         ))}
       </div>
@@ -577,20 +587,39 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         </div>
       </Modal>
 
-      {/* Edit Broker Modal — only charge settings are editable */}
+      {/* Edit Broker Modal */}
       <Modal open={showEditBroker} onClose={() => setShowEdit(false)} title="Edit Broker">
         <div className="space-y-4">
-          {/* Read-only identity info */}
-          <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Broker Info (read-only)</p>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-              <div><span className="text-gray-500">Name</span><p className="font-semibold text-gray-900">{broker.name}</p></div>
-              <div><span className="text-gray-500">Phone</span><p className="font-semibold text-gray-900">{broker.phone || '—'}</p></div>
-              <div><span className="text-gray-500">Start Date</span><p className="font-semibold text-gray-900">{broker.startDate ? format(new Date(broker.startDate), 'MMM d, yyyy') : '—'}</p></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Broker Name</label>
+              <input
+                type="text"
+                value={brokerForm.name}
+                onChange={(e) => setBrokerForm((f) => ({ ...f, name: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <input
+                type="text"
+                value={brokerForm.phone}
+                onChange={(e) => setBrokerForm((f) => ({ ...f, phone: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={brokerForm.startDate}
+                onChange={(e) => setBrokerForm((f) => ({ ...f, startDate: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
           </div>
 
-          {/* Editable charge settings */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -602,9 +631,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                 onChange={(e) => setBrokerForm((f) => ({ ...f, standRentAmount: e.target.value }))}
                 className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <p className="mt-1 text-xs text-gray-400">
-                Late fee: +$30/vehicle per unpaid week
-              </p>
+              <p className="mt-1 text-xs text-gray-400">Late fee: +$30/vehicle per unpaid week</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

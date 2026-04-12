@@ -26,7 +26,14 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   try {
-    const vehicle = await prisma.brokerVehicle.create({ data: parsed.data, include: { broker: { select: { id: true, name: true } } } });
+    const vehicle = await prisma.brokerVehicle.create({
+      data: parsed.data,
+      include: {
+        broker:    { select: { id: true, name: true } },
+        accidents: { orderBy: { date: 'desc' } },
+        documents: { orderBy: { createdAt: 'desc' } },
+      },
+    });
     return NextResponse.json(vehicle, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

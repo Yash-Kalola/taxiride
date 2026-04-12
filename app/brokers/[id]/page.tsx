@@ -11,7 +11,8 @@ export default async function BrokerDetailPage({ params }: { params: { id: strin
       where: { id: params.id },
       include: {
         transactions: { orderBy: { createdAt: 'desc' } },
-        vehicles: { orderBy: { cabNumber: 'asc' } },
+        vehicles:     { orderBy: { cabNumber: 'asc' } },
+        expenses:     { orderBy: { date: 'desc' } },
       },
     });
   } catch {}
