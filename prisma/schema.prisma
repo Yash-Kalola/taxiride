@@ -156,13 +156,26 @@ model VehicleAccident {
 }
 
 model BrokerExpense {
-  id        String   @id @default(cuid())
-  brokerId  String
-  broker    Broker   @relation(fields: [brokerId], references: [id], onDelete: Cascade)
-  cabNumber String   @default("")
-  date      DateTime
-  amount    Float
-  note      String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String              @id @default(cuid())
+  brokerId    String
+  broker      Broker              @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  cabNumber   String              @default("")
+  date        DateTime
+  amount      Float
+  note        String              @default("")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  attachments ExpenseAttachment[]
+}
+
+model ExpenseAttachment {
+  id        String       @id @default(cuid())
+  expenseId String
+  expense   BrokerExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  label     String       @default("")
+  fileName  String
+  filePath  String
+  fileType  String       @default("")
+  fileSize  Int          @default(0)
+  createdAt DateTime     @default(now())
 }

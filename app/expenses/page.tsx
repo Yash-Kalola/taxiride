@@ -11,7 +11,7 @@ export default async function ExpensesPage() {
     [expenses, brokers] = await Promise.all([
       prisma.brokerExpense.findMany({
         orderBy: { date: 'desc' },
-        include: { broker: { select: { id: true, name: true } } },
+        include: { broker: { select: { id: true, name: true } }, attachments: { orderBy: { createdAt: 'desc' } } },
       }),
       prisma.broker.findMany({
         where:   { isActive: true },

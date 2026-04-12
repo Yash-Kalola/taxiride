@@ -10,13 +10,24 @@ import { formatCurrency } from '@/lib/tax';
 
 interface BrokerVehicle { id: string; cabNumber: string; }
 interface Broker   { id: string; name: string; vehicles: BrokerVehicle[]; }
+interface ExpenseAttachment {
+  id: string; expenseId: string; label: string; fileName: string;
+  filePath: string; fileType: string; fileSize: number; createdAt: string;
+}
 interface Expense  {
   id: string; brokerId: string; cabNumber: string; date: string;
   amount: number; note: string; createdAt: string;
   broker: { id: string; name: string };
+  attachments: ExpenseAttachment[];
 }
 
 const EMPTY_FORM = { brokerId: '', cabNumber: '', date: new Date().toISOString().split('T')[0], amount: '', note: '' };
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024)        return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function ExpensesClient({ initialExpenses, brokers }: { initialExpenses: Expense[]; brokers: Broker[] }) {
   const [expenses,   setExpenses]  = useState<Expense[]>(initialExpenses);
@@ -25,6 +36,14 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
   const [saving,     setSaving]    = useState(false);
   const [error,      setError]     = useState('');
   const [filterBroker, setFilter]  = useState('');
+
+  // Attachment state
+  const [attExpense,  setAttExpense]  = useState<Expense | null>(null);
+  const [showAttModal, setShowAttModal] = useState(false);
+  const [attLabel,    setAttLabel]    = useState('');
+  const [attFile,     setAttFile]     = useState<File | null>(null);
+  const [savingAtt,   setSavingAtt]   = useState(false);
+  const [attError,    setAttError]    = useState('');
 
   const filtered = useMemo(() =>
     filterBroker ? expenses.filter(e => e.brokerId === filterBroker) : expenses,
@@ -55,6 +74,41 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
     if (!confirm('Delete this expense?')) return;
     const res = await fetch(`/api/brokers/expenses/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 204) setExpenses(prev => prev.filter(e => e.id !== id));
+  }
+
+  // Attachment handlers
+  function openAttachments(e: Expense) {
+    setAttExpense(e); setAttLabel(''); setAttFile(null); setAttError(''); setShowAttModal(true);
+  }
+
+  async function uploadAttachment() {
+    if (!attExpense || !attFile) { setAttError('Please select a file.'); return; }
+    setSavingAtt(true); setAttError('');
+    try {
+      const fd = new FormData();
+      fd.append('file',  attFile);
+      fd.append('label', attLabel);
+      const res  = await fetch(`/api/expenses/${attExpense.id}/attachments`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) { setAttError(data.error ?? 'Upload failed'); return; }
+      setExpenses(prev => prev.map(e =>
+        e.id === attExpense.id ? { ...e, attachments: [data, ...e.attachments] } : e
+      ));
+      setAttExpense(prev => prev ? { ...prev, attachments: [data, ...(prev.attachments ?? [])] } : prev);
+      setAttLabel(''); setAttFile(null);
+    } catch { setAttError('Network error'); }
+    finally { setSavingAtt(false); }
+  }
+
+  async function deleteAttachment(expenseId: string, attId: string) {
+    if (!confirm('Delete this attachment?')) return;
+    const res = await fetch(`/api/expenses/attachments/${attId}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      setExpenses(prev => prev.map(e =>
+        e.id === expenseId ? { ...e, attachments: e.attachments.filter(a => a.id !== attId) } : e
+      ));
+      setAttExpense(prev => prev ? { ...prev, attachments: prev.attachments.filter(a => a.id !== attId) } : prev);
+    }
   }
 
   return (
@@ -97,7 +151,7 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date', 'Broker', 'Cab #', 'Amount', 'Note', ''].map(h => (
+                  {['Date', 'Broker', 'Cab #', 'Amount', 'Note', 'Attachments', ''].map(h => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -115,7 +169,18 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
                     </td>
                     <td className="px-5 py-4 font-mono text-sm text-gray-700">{e.cabNumber || '—'}</td>
                     <td className="px-5 py-4 text-sm font-semibold text-gray-900">{formatCurrency(e.amount)}</td>
-                    <td className="px-5 py-4 text-sm text-gray-600 max-w-[220px] truncate">{e.note || '—'}</td>
+                    <td className="px-5 py-4 text-sm text-gray-600 max-w-[200px] truncate">{e.note || '—'}</td>
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => openAttachments(e)}
+                        className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                        </svg>
+                        {e.attachments.length > 0 ? `${e.attachments.length} file${e.attachments.length !== 1 ? 's' : ''}` : 'Attach'}
+                      </button>
+                    </td>
                     <td className="px-5 py-4">
                       <Button size="sm" variant="ghost" onClick={() => deleteExpense(e.id)}
                         className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50">
@@ -129,7 +194,7 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
                 <tr className="border-t-2 border-gray-200 bg-gray-50">
                   <td colSpan={3} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Total</td>
                   <td className="px-5 py-3 text-sm font-bold text-gray-900">{formatCurrency(totalAmount)}</td>
-                  <td colSpan={2} />
+                  <td colSpan={3} />
                 </tr>
               </tfoot>
             </table>
@@ -173,6 +238,9 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
                   className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               )}
+              {selectedBroker && selectedBroker.vehicles.length === 0 && form.cabNumber && (
+                <p className="mt-1 text-xs text-amber-600">⚠ No cabs registered for this broker — cab will be validated on save.</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -201,6 +269,74 @@ export default function ExpensesClient({ initialExpenses, brokers }: { initialEx
             <Button variant="primary" onClick={save} disabled={saving || !form.brokerId || !form.amount || !form.date}>
               {saving ? 'Saving…' : 'Add Expense'}
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Attachments Modal */}
+      <Modal
+        open={showAttModal}
+        onClose={() => setShowAttModal(false)}
+        title={`Attachments — ${attExpense?.broker?.name ?? ''}`}
+      >
+        <div className="space-y-4">
+          {/* Existing attachments */}
+          {attExpense && attExpense.attachments.length > 0 && (
+            <div className="space-y-2">
+              {attExpense.attachments.map(a => (
+                <div key={a.id} className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className="w-4 h-4 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                    </svg>
+                    <div className="min-w-0">
+                      {a.label && <p className="text-xs font-semibold text-gray-700">{a.label}</p>}
+                      <p className="text-xs text-gray-500 truncate">{a.fileName}</p>
+                      <p className="text-xs text-gray-400">{formatFileSize(a.fileSize)}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0 ml-3">
+                    <a href={a.filePath} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-indigo-600 hover:underline font-medium">Download</a>
+                    <button onClick={() => deleteAttachment(attExpense.id, a.id)}
+                      className="text-xs text-red-500 hover:text-red-700">Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {attExpense && attExpense.attachments.length === 0 && (
+            <p className="text-sm text-gray-400">No attachments yet.</p>
+          )}
+
+          {/* Upload new */}
+          <div className="border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Upload New File</p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Label <span className="text-xs font-normal text-gray-400">(e.g. Receipt, Invoice)</span>
+              </label>
+              <input type="text" value={attLabel} placeholder="e.g. Receipt"
+                onChange={e => setAttLabel(e.target.value)}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                onChange={e => setAttFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+              {attFile && <p className="mt-1 text-xs text-gray-400">{attFile.name} · {formatFileSize(attFile.size)}</p>}
+            </div>
+            {attError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{attError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setShowAttModal(false)}>Close</Button>
+              <Button variant="primary" onClick={uploadAttachment} disabled={savingAtt || !attFile}>
+                {savingAtt ? 'Uploading…' : 'Upload'}
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>
