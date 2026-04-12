@@ -8,7 +8,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: params.id },
-      include: { company: true, rides: true },
+      include: { company: true, rides: { where: { voided: false } } },
     });
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     if (!invoice.company.email) return NextResponse.json({ error: 'No email address on file for this company.' }, { status: 400 });

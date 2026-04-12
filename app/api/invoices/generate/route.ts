@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 });
 
     const rides = await prisma.ride.findMany({
-      where: { companyId, month, year, invoiceId: null },
+      where: { companyId, month, year, invoiceId: null, voided: false },
     });
     if (rides.length === 0) {
       return NextResponse.json({ error: `No uninvoiced rides for ${company.companyName} in ${month} ${year}` }, { status: 422 });
