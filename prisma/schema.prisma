@@ -98,6 +98,20 @@ model Broker {
   transactions    BrokerTransaction[]
   vehicles        BrokerVehicle[]
   expenses        BrokerExpense[]
+  recurringCharges RecurringCharge[]
+}
+
+model RecurringCharge {
+  id          String            @id @default(cuid())
+  brokerId    String
+  broker      Broker            @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  amount      Float
+  description String            @default("")
+  dayOfMonth  Int               // 1–31: day when this charge auto-generates
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 }
 
 model BrokerTransaction {

@@ -10,9 +10,10 @@ export default async function BrokerDetailPage({ params }: { params: { id: strin
     brokerRaw = await prisma.broker.findUnique({
       where: { id: params.id },
       include: {
-        transactions: { orderBy: { createdAt: 'desc' } },
-        vehicles:     { orderBy: { cabNumber: 'asc' } },
-        expenses:     { orderBy: { date: 'desc' } },
+        transactions:    { orderBy: { createdAt: 'desc' } },
+        vehicles:        { orderBy: { cabNumber: 'asc' } },
+        expenses:        { orderBy: { date: 'desc' } },
+        recurringCharges: { orderBy: { createdAt: 'desc' } },
       },
     });
   } catch {}

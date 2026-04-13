@@ -20,12 +20,15 @@ interface Transaction {
 
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
 interface BrokerExpense { id: string; cabNumber: string; date: string; amount: number; note: string; paid: boolean; }
+interface RecurringCharge { id: string; type: string; amount: number; description: string; dayOfMonth: number; isActive: boolean; }
+interface BrokerRide { id: string; vehicleNumber: string; dateTime: string; amount: number; passenger: string; company: { companyName: string }; }
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
   vehicles: BrokerVehicle[];
   expenses: BrokerExpense[];
+  recurringCharges: RecurringCharge[];
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -65,6 +68,8 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
 }
 
+const EMPTY_RC = { type: 'COMPANY_PAYMENT' as string, amount: '', description: '', dayOfMonth: '1' };
+
 export default function BrokerDetailClient({ broker: initial }: { broker: Broker }) {
   const router = useRouter();
   const [broker,        setBroker]       = useState<Broker>(initial);
@@ -76,6 +81,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [txForm,        setTxForm]       = useState(EMPTY_TX);
   const [brokerForm,    setBrokerForm]   = useState(EMPTY_BROKER);
   const [savingTx,      setSavingTx]     = useState(false);
+
+  // --- Rides linked via cab number ---
+  const [brokerRides, setBrokerRides] = useState<BrokerRide[]>([]);
+  const [ridesLoading, setRidesLoading] = useState(false);
+
+  // --- Recurring charges ---
+  const [showAddRC, setShowAddRC] = useState(false);
+  const [rcForm, setRcForm] = useState(EMPTY_RC);
+  const [savingRC, setSavingRC] = useState(false);
+  const [rcError, setRcError] = useState('');
   const [savingBroker,  setSavingBroker] = useState(false);
   const [txError,       setTxError]      = useState('');
   const [brokerError,   setBrokerError]  = useState('');
@@ -191,6 +206,76 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       setAutoGenBanner('');
     } finally {
       setAutoGenerating(false);
+    }
+  }
+
+  // --- Fetch rides linked via cab number ---
+  const didFetchRides = useRef(false);
+  useEffect(() => {
+    if (didFetchRides.current || broker.vehicles.length === 0) return;
+    didFetchRides.current = true;
+    setRidesLoading(true);
+    fetch(`/api/brokers/${broker.id}/rides?month=${thisMonth}&year=${thisYear}`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setBrokerRides(data); })
+      .finally(() => setRidesLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Auto-generate recurring charges ---
+  const didAutoGenRC = useRef(false);
+  useEffect(() => {
+    if (didAutoGenRC.current || !broker.isActive || !broker.recurringCharges?.length) return;
+    didAutoGenRC.current = true;
+    fetch(`/api/brokers/${broker.id}/generate-recurring`, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data?.count > 0) {
+          // Refetch transactions to include newly created ones
+          fetch(`/api/brokers/${broker.id}`).then(r => r.json()).then(fresh => {
+            if (fresh?.transactions) setTransactions(fresh.transactions);
+            if (fresh) setBroker((prev) => ({ ...prev, ...fresh }));
+          });
+        }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Recurring charge CRUD ---
+  async function saveRC() {
+    setSavingRC(true); setRcError('');
+    try {
+      const res = await fetch(`/api/brokers/${broker.id}/recurring`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...rcForm, amount: parseFloat(rcForm.amount) || 0, dayOfMonth: parseInt(rcForm.dayOfMonth) || 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRcError(data.error ?? 'Failed'); return; }
+      setBroker(prev => ({ ...prev, recurringCharges: [data, ...(prev.recurringCharges || [])] }));
+      setShowAddRC(false); setRcForm(EMPTY_RC);
+    } catch { setRcError('Network error'); }
+    finally { setSavingRC(false); }
+  }
+
+  async function deleteRC(id: string) {
+    if (!confirm('Delete this recurring charge?')) return;
+    const res = await fetch(`/api/brokers/recurring/${id}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      setBroker(prev => ({ ...prev, recurringCharges: (prev.recurringCharges || []).filter(rc => rc.id !== id) }));
+    }
+  }
+
+  async function toggleRCActive(id: string, isActive: boolean) {
+    const res = await fetch(`/api/brokers/recurring/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !isActive }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setBroker(prev => ({
+        ...prev,
+        recurringCharges: (prev.recurringCharges || []).map(rc => rc.id === id ? updated : rc),
+      }));
     }
   }
 
@@ -546,6 +631,145 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
           </div>
         )}
       </div>
+
+      {/* Recurring Charges */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Recurring Payments</h2>
+          <Button variant="primary" onClick={() => { setRcForm(EMPTY_RC); setRcError(''); setShowAddRC(true); }}>+ Add Recurring</Button>
+        </div>
+        {(!broker.recurringCharges || broker.recurringCharges.length === 0) ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-10 text-center">
+            <p className="text-base font-semibold text-gray-900">No recurring payments</p>
+            <p className="mt-1 text-sm text-gray-500">Set up recurring charges that auto-generate on a specific day each month.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['Type', 'Description', 'Amount', 'Day of Month', 'Status', ''].map((h) => (
+                    <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {broker.recurringCharges.map((rc) => (
+                  <tr key={rc.id} className={`group hover:bg-gray-50 transition-colors ${!rc.isActive ? 'opacity-50' : ''}`}>
+                    <td className="px-4 py-3.5">
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 whitespace-nowrap">
+                        {TYPE_LABELS[rc.type] ?? rc.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600">{rc.description || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(rc.amount)}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-500">{ordinal(rc.dayOfMonth)} of each month</td>
+                    <td className="px-4 py-3.5"><Badge variant={rc.isActive ? 'active' : 'inactive'} /></td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button size="sm" variant="ghost" onClick={() => toggleRCActive(rc.id, rc.isActive)}
+                          className={rc.isActive ? 'text-amber-600' : 'text-emerald-600'}>
+                          {rc.isActive ? 'Pause' : 'Resume'}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteRC(rc.id)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50">Delete</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Rides linked via cab number */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Rides ({MONTHS[thisMonth - 1]} {thisYear})
+            {brokerRides.length > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{brokerRides.length} rides · {formatCurrency(brokerRides.reduce((s, r) => s + r.amount, 0))}</span>}
+          </h2>
+        </div>
+        {ridesLoading ? (
+          <div className="rounded-2xl bg-white px-6 py-10 text-center shadow-sm ring-1 ring-gray-200">
+            <p className="text-sm text-gray-400 animate-pulse">Loading rides…</p>
+          </div>
+        ) : brokerRides.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-10 text-center">
+            <p className="text-base font-semibold text-gray-900">No rides this month</p>
+            <p className="mt-1 text-sm text-gray-500">{broker.vehicles.length === 0 ? 'No vehicles assigned to this broker.' : 'No rides found matching this broker\'s vehicle numbers.'}</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
+            <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['Date/Time', 'Cab #', 'Passenger', 'Company', 'Amount'].map((h) => (
+                    <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {brokerRides.map((ride) => (
+                  <tr key={ride.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3.5 text-sm text-gray-500 whitespace-nowrap">{ride.dateTime || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm font-mono font-semibold text-gray-700">#{ride.vehicleNumber}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600">{ride.passenger || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-500">{ride.company?.companyName || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(ride.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Add Recurring Charge Modal */}
+      <Modal open={showAddRC} onClose={() => setShowAddRC(false)} title="Add Recurring Payment">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select value={rcForm.type} onChange={(e) => setRcForm(f => ({ ...f, type: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {TX_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
+              <input type="number" min={0} step={0.01} value={rcForm.amount}
+                onChange={(e) => setRcForm(f => ({ ...f, amount: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input type="text" value={rcForm.description} placeholder="e.g. Monthly insurance payment"
+              onChange={(e) => setRcForm(f => ({ ...f, description: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Day of Month <span className="text-xs font-normal text-gray-400">(1–31)</span>
+            </label>
+            <input type="number" min={1} max={31} value={rcForm.dayOfMonth}
+              onChange={(e) => setRcForm(f => ({ ...f, dayOfMonth: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p className="mt-1 text-xs text-gray-400">Transaction will auto-generate on this day each month.</p>
+          </div>
+          {rcError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{rcError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowAddRC(false)}>Cancel</Button>
+            <Button variant="primary" onClick={saveRC} disabled={savingRC || !rcForm.amount}>
+              {savingRC ? 'Saving…' : 'Add Recurring Payment'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Add Transaction Modal */}
       <Modal open={showAddTx} onClose={() => setShowAddTx(false)} title="Add Transaction" size="lg">

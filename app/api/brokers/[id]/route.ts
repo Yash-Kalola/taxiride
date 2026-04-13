@@ -17,9 +17,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const broker = await prisma.broker.findUnique({
       where: { id: params.id },
       include: {
-        transactions: { orderBy: { createdAt: 'desc' } },
-        vehicles:     { orderBy: { cabNumber: 'asc' } },
-        expenses:     { orderBy: { date: 'desc' } },
+        transactions:    { orderBy: { createdAt: 'desc' } },
+        vehicles:        { orderBy: { cabNumber: 'asc' } },
+        expenses:        { orderBy: { date: 'desc' } },
+        recurringCharges: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!broker) return NextResponse.json({ error: 'Not found' }, { status: 404 });
