@@ -6,15 +6,22 @@ import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency } from '@/lib/tax';
 
 interface MonthMeta { label: string; month: number; year: number; key: string; }
-interface TxSummary  { type: string; amount: number; month: number; year: number; }
+interface TxSummary  { type: string; amount: number; month: number; year: number; status: string; }
+interface ExpenseSummary { amount: number; date: string; paid: boolean; }
 interface BrokerVehicleSummary { cabNumber: string; isCompanyCar: boolean; }
-interface BrokerRow  { id: string; name: string; isActive: boolean; transactions: TxSummary[]; vehicles: BrokerVehicleSummary[]; }
+interface BrokerRow  { id: string; name: string; isActive: boolean; transactions: TxSummary[]; vehicles: BrokerVehicleSummary[]; expenses: ExpenseSummary[]; }
 
-function computeCell(transactions: TxSummary[], month: number, year: number): { net: number; count: number } | null {
+function computeCell(transactions: TxSummary[], expenses: ExpenseSummary[], month: number, year: number): { net: number; count: number } | null {
   const txs = transactions.filter((t) => t.month === month && t.year === year);
-  if (txs.length === 0) return null;
-  const net = txs.reduce((sum, t) => t.type === 'PAYOUT' ? sum - t.amount : sum + t.amount, 0);
-  return { net, count: txs.length };
+  // Include unpaid expenses for this month/year
+  const monthExpenses = expenses.filter((e) => {
+    const d = new Date(e.date);
+    return d.getMonth() + 1 === month && d.getFullYear() === year && !e.paid;
+  });
+  if (txs.length === 0 && monthExpenses.length === 0) return null;
+  const txNet = txs.reduce((sum, t) => t.type === 'PAYOUT' ? sum - t.amount : sum + t.amount, 0);
+  const expNet = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  return { net: txNet + expNet, count: txs.length + monthExpenses.length };
 }
 
 export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow[]; months: MonthMeta[] }) {
@@ -25,7 +32,7 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
   for (const b of brokers) {
     grid[b.id] = {};
     for (const m of months) {
-      grid[b.id][m.key] = computeCell(b.transactions, m.month, m.year);
+      grid[b.id][m.key] = computeCell(b.transactions, b.expenses, m.month, m.year);
     }
   }
 

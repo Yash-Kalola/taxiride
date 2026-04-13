@@ -18,19 +18,23 @@ export default async function BrokerOverviewPage() {
     });
   }
 
-  let brokers: { id: string; name: string; isActive: boolean; transactions: { type: string; amount: number; month: number; year: number }[]; vehicles: { cabNumber: string; isCompanyCar: boolean }[] }[] = [];
+  let brokersRaw: any[] = [];
   try {
-    brokers = await prisma.broker.findMany({
+    brokersRaw = await prisma.broker.findMany({
       orderBy: { name: 'asc' },
       include: {
         transactions: {
-          where: { OR: months.map((m) => ({ month: m.month, year: m.year })) },
-          select: { type: true, amount: true, month: true, year: true },
+          where: { OR: months.map((m) => ({ month: m.month, year: m.year })), status: { not: 'VOID' } },
+          select: { type: true, amount: true, month: true, year: true, status: true },
         },
         vehicles: { where: { isActive: true }, select: { cabNumber: true, isCompanyCar: true } },
+        expenses: { select: { amount: true, date: true, paid: true } },
       },
     });
   } catch {}
+
+  // Serialize dates for client component
+  const brokers = JSON.parse(JSON.stringify(brokersRaw));
 
   return (
     <div className="px-8 py-8">

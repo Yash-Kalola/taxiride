@@ -18,6 +18,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       where: { id: params.id },
       include: {
         transactions: { orderBy: { createdAt: 'desc' } },
+        vehicles:     { orderBy: { cabNumber: 'asc' } },
+        expenses:     { orderBy: { date: 'desc' } },
       },
     });
     if (!broker) return NextResponse.json({ error: 'Not found' }, { status: 404 });

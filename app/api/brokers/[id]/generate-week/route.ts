@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
-import { formatWeekRange } from '@/lib/weeks';
+import { formatWeekRange, getWeeksInMonth } from '@/lib/weeks';
 
 const schema = z.object({
   month:      z.number().int().min(1).max(12),
@@ -16,6 +16,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const { month, year, weekNumber } = parsed.data;
+  const maxWeeks = getWeeksInMonth(month, year);
+  if (weekNumber > maxWeeks) {
+    return NextResponse.json({ error: `Month ${month}/${year} only has ${maxWeeks} weeks` }, { status: 400 });
+  }
 
   try {
     const broker = await prisma.broker.findUnique({

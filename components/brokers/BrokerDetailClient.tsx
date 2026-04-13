@@ -179,9 +179,10 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         });
       }
 
-      // Refetch fresh transactions from server to avoid any stale-state merging
+      // Refetch full broker data from server to avoid any stale-state merging
       const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
       if (fresh?.transactions) setTransactions(fresh.transactions);
+      if (fresh) setBroker((prev) => ({ ...prev, ...fresh }));
 
       const label = fromWeek === toWeek ? `Week ${fromWeek}` : `Weeks ${fromWeek}–${toWeek}`;
       setAutoGenBanner(`✓ Auto-generated ${label} stand rent for ${MONTHS[thisMonth - 1]}`);
