@@ -35,6 +35,7 @@ const TYPE_LABELS: Record<string, string> = {
   INSURANCE:       'Insurance',
   PAYOUT:          'Payout',
   OTHER:           'Other',
+  EXPENSE:         'Expense',
 };
 
 const TX_TYPES = ['STAND_RENT', 'COMPANY_PAYMENT', 'PRODUCT_CHARGE', 'INSURANCE', 'PAYOUT', 'OTHER'] as const;
@@ -108,14 +109,36 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       .reduce((s, t) => s + t.amount, 0),
   [transactions, thisMonth, thisYear]);
 
-  // Filtered + sorted transactions
+  // Merge expenses into the transaction list as virtual rows
+  const allRows = useMemo(() => {
+    const expenseRows: Transaction[] = broker.expenses.map((e) => {
+      const d = new Date(e.date);
+      return {
+        id: `exp-${e.id}`,
+        brokerId: broker.id,
+        type: 'EXPENSE',
+        amount: e.amount,
+        status: e.paid ? 'PAID' : 'PENDING',
+        dueDate: null,
+        paidDate: null,
+        description: `${e.cabNumber ? `Cab #${e.cabNumber}` : ''}${e.note ? (e.cabNumber ? ' — ' : '') + e.note : ''}` || '—',
+        month: d.getMonth() + 1,
+        year: d.getFullYear(),
+        createdAt: e.date,
+        updatedAt: e.date,
+      };
+    });
+    return [...transactions, ...expenseRows];
+  }, [transactions, broker.expenses, broker.id]);
+
+  // Filtered + sorted transactions (includes expenses)
   const displayed = useMemo(() => {
-    return transactions.filter((t) => {
+    return allRows.filter((t) => {
       if (filterMonth && String(t.month) !== filterMonth) return false;
       if (filterYear  && String(t.year)  !== filterYear)  return false;
       return true;
     });
-  }, [transactions, filterMonth, filterYear]);
+  }, [allRows, filterMonth, filterYear]);
 
   // Monthly charge generation status
   const thisMonthStandRentCount = useMemo(() =>
@@ -382,25 +405,6 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         )}
       </div>
 
-      {/* Expenses quick link */}
-      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Expenses</p>
-            <p className="mt-0.5 text-sm text-gray-500">Receipts, product charges, and other broker expenses.</p>
-          </div>
-          <Link
-            href={`/expenses?broker=${broker.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
-            </svg>
-            View / Add Expenses →
-          </Link>
-        </div>
-      </div>
-
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         {[
@@ -453,7 +457,15 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>
           </div>
-          <Button variant="primary" onClick={openAddTx}>+ Add Transaction</Button>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/expenses?broker=${broker.id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+            >
+              + Add Expense
+            </Link>
+            <Button variant="primary" onClick={openAddTx}>+ Add Transaction</Button>
+          </div>
         </div>
 
         {displayed.length === 0 ? (
@@ -474,15 +486,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {displayed.map((tx) => {
+                  const isExpense = tx.id.startsWith('exp-');
                   const bv = txBadgeVariant(tx);
                   const isVoid = tx.status === 'VOID';
                   return (
-                    <tr key={tx.id} className={`group hover:bg-gray-50 transition-colors ${isVoid ? 'opacity-50' : ''}`}>
+                    <tr key={tx.id} className={`group hover:bg-gray-50 transition-colors ${isVoid ? 'opacity-50' : ''} ${isExpense ? 'bg-amber-50/40' : ''}`}>
                       <td className="px-4 py-3.5 text-sm text-gray-500 whitespace-nowrap">
                         {format(new Date(tx.createdAt), 'MMM d, yyyy')}
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-700 whitespace-nowrap">
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${isExpense ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'}`}>
                           {TYPE_LABELS[tx.type] ?? tx.type}
                         </span>
                       </td>
@@ -494,6 +507,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                       </td>
                       <td className="px-4 py-3.5"><Badge variant={bv} /></td>
                       <td className="px-4 py-3.5">
+                        {isExpense ? (
+                          <Link href={`/expenses?broker=${broker.id}`} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                            Edit →
+                          </Link>
+                        ) : (
                         <div className="flex items-center gap-1">
                           {!isVoid && (
                             <Button size="sm" variant="ghost" onClick={() => openEditTx(tx)}
@@ -516,6 +534,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                             Delete
                           </Button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   );

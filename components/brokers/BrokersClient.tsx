@@ -78,10 +78,11 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
     try {
       const url    = modal === 'edit' ? `/api/brokers/${editing!.id}` : '/api/brokers';
       const method = modal === 'edit' ? 'PUT' : 'POST';
-      // When editing: only send charge-related fields (identity fields are locked)
-      const payload = modal === 'edit'
-        ? { billingDay: parseInt(form.billingDay) || 1, standRentAmount: parseFloat(form.standRentAmount) || 200 }
-        : { ...form, billingDay: parseInt(form.billingDay) || 1, standRentAmount: parseFloat(form.standRentAmount) || 200 };
+      const payload = {
+        ...form,
+        billingDay:      parseInt(form.billingDay) || 1,
+        standRentAmount: parseFloat(form.standRentAmount) || 200,
+      };
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data   = await res.json();
       if (!res.ok) { setError(data.error?.fieldErrors ? JSON.stringify(data.error.fieldErrors) : data.error ?? 'Failed'); return; }
@@ -218,74 +219,38 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
       <Modal open={modal !== null} onClose={() => setModal(null)} title={modal === 'edit' ? 'Edit Broker' : 'Add Broker'}>
         <div className="space-y-4">
 
-          {modal === 'edit' ? (
-            /* EDIT: identity fields locked, only charge settings editable */
-            <>
-              <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Broker Info (read-only)</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                  <div><span className="text-gray-500">Name</span><p className="font-semibold text-gray-900">{editing?.name}</p></div>
-                  <div><span className="text-gray-500">Phone</span><p className="font-semibold text-gray-900">{editing?.phone || '—'}</p></div>
-                  <div className="mt-1"><span className="text-gray-500">Start Date</span><p className="font-semibold text-gray-900">{editing?.startDate ? format(new Date(editing.startDate), 'MMM d, yyyy') : '—'}</p></div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Weekly Stand Rent <span className="text-xs font-normal text-gray-400">($/vehicle/week)</span>
-                  </label>
-                  <input type="number" min={0} step={1} value={form.standRentAmount}
-                    onChange={(e) => setForm((f) => ({ ...f, standRentAmount: e.target.value }))}
-                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <p className="mt-1 text-xs text-gray-400">Late payment: +15% (${Math.round((parseFloat(form.standRentAmount) || 200) * 1.15)})</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Monthly Billing Day <span className="text-xs font-normal text-gray-400">(1–31)</span>
-                  </label>
-                  <input type="number" min={1} max={31} value={form.billingDay}
-                    onChange={(e) => setForm((f) => ({ ...f, billingDay: e.target.value }))}
-                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-            </>
-          ) : (
-            /* ADD: full form */
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <Input label="Name" placeholder="John Smith" {...field('name')} />
-                <Input label="Phone" placeholder="+1 (705) 555-0123" {...field('phone')} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Input label="Start Date" type="date" {...field('startDate')} />
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Monthly Billing Day <span className="ml-1 text-xs font-normal text-gray-400">(1–31)</span>
-                  </label>
-                  <input type="number" min={1} max={31} value={form.billingDay}
-                    onChange={(e) => setForm((f) => ({ ...f, billingDay: e.target.value }))}
-                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Name" placeholder="John Smith" {...field('name')} />
+              <Input label="Phone" placeholder="+1 (705) 555-0123" {...field('phone')} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Start Date" type="date" {...field('startDate')} />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Weekly Stand Rent <span className="text-xs font-normal text-gray-400">($/vehicle/week, default $200)</span>
+                  Monthly Billing Day <span className="ml-1 text-xs font-normal text-gray-400">(1–31)</span>
                 </label>
-                <input type="number" min={0} step={1} value={form.standRentAmount}
-                  onChange={(e) => setForm((f) => ({ ...f, standRentAmount: e.target.value }))}
+                <input type="number" min={1} max={31} value={form.billingDay}
+                  onChange={(e) => setForm((f) => ({ ...f, billingDay: e.target.value }))}
                   className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
-            </>
-          )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Weekly Stand Rent <span className="text-xs font-normal text-gray-400">($/vehicle/week, default $200)</span>
+              </label>
+              <input type="number" min={0} step={1} value={form.standRentAmount}
+                onChange={(e) => setForm((f) => ({ ...f, standRentAmount: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </>
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>
-            <Button variant="primary" onClick={save} disabled={saving || (modal === 'add' && (!form.name || !form.startDate))}>
+            <Button variant="primary" onClick={save} disabled={saving || !form.name || (modal === 'add' && !form.startDate)}>
               {saving ? 'Saving…' : modal === 'edit' ? 'Save Changes' : 'Add Broker'}
             </Button>
           </div>
