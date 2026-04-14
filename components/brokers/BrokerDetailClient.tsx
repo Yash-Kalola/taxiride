@@ -128,6 +128,10 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const thisMonth = today.getMonth() + 1;
   const thisYear  = today.getFullYear();
 
+  // Selectable month/year for rides & summary cards (defaults to current month)
+  const [viewMonth, setViewMonth] = useState(thisMonth);
+  const [viewYear,  setViewYear]  = useState(thisYear);
+
   // Summary card computations
   const totalExpenses = useMemo(() =>
     broker.expenses.filter(e => !e.paid).reduce((s, e) => s + e.amount, 0),
@@ -142,14 +146,14 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   [transactions]);
 
   const collectedThisMonth = useMemo(() =>
-    transactions.filter((t) => t.type !== 'PAYOUT' && t.status === 'PAID' && t.month === thisMonth && t.year === thisYear)
+    transactions.filter((t) => t.type !== 'PAYOUT' && t.status === 'PAID' && t.month === viewMonth && t.year === viewYear)
       .reduce((s, t) => s + t.amount, 0),
-  [transactions, thisMonth, thisYear]);
+  [transactions, viewMonth, viewYear]);
 
   const paidOutThisMonth = useMemo(() =>
-    transactions.filter((t) => t.type === 'PAYOUT' && t.status === 'PAID' && t.month === thisMonth && t.year === thisYear)
+    transactions.filter((t) => t.type === 'PAYOUT' && t.status === 'PAID' && t.month === viewMonth && t.year === viewYear)
       .reduce((s, t) => s + t.amount, 0),
-  [transactions, thisMonth, thisYear]);
+  [transactions, viewMonth, viewYear]);
 
   // Merge expenses into the transaction list as virtual rows
   const allRows = useMemo(() => {
@@ -242,19 +246,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     }
   }
 
-  // --- Fetch rides linked via cab number ---
-  const didFetchRides = useRef(false);
+  // --- Fetch rides linked via cab number (re-fetches when viewMonth/viewYear changes) ---
   useEffect(() => {
-    if (didFetchRides.current || broker.vehicles.length === 0) return;
-    didFetchRides.current = true;
+    if (broker.vehicles.length === 0) return;
     setRidesLoading(true);
-    fetch(`/api/brokers/${broker.id}/rides?month=${thisMonth}&year=${thisYear}`)
+    fetch(`/api/brokers/${broker.id}/rides?month=${viewMonth}&year=${viewYear}`)
       .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
       .then(data => { if (Array.isArray(data)) setBrokerRides(data); })
       .catch(err => console.error('Failed to fetch rides:', err))
       .finally(() => setRidesLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [broker.id, broker.vehicles.length, viewMonth, viewYear]);
 
   // --- Auto-generate recurring charges ---
   const didAutoGenRC = useRef(false);
@@ -673,14 +674,47 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         )}
       </div>
 
+      {/* Month/Year selector */}
+      <div className="flex items-center gap-3">
+        <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+          <button
+            onClick={() => {
+              const prev = viewMonth === 1 ? 12 : viewMonth - 1;
+              const prevY = viewMonth === 1 ? viewYear - 1 : viewYear;
+              setViewMonth(prev); setViewYear(prevY);
+            }}
+            className="rounded-md px-2 py-1 text-sm text-gray-500 hover:bg-white hover:text-gray-900 hover:shadow-sm transition-colors"
+          >←</button>
+          <span className="px-3 py-1 text-sm font-semibold text-gray-900 min-w-[120px] text-center">
+            {MONTHS[viewMonth - 1]} {viewYear}
+          </span>
+          <button
+            onClick={() => {
+              const next = viewMonth === 12 ? 1 : viewMonth + 1;
+              const nextY = viewMonth === 12 ? viewYear + 1 : viewYear;
+              setViewMonth(next); setViewYear(nextY);
+            }}
+            className="rounded-md px-2 py-1 text-sm text-gray-500 hover:bg-white hover:text-gray-900 hover:shadow-sm transition-colors"
+          >→</button>
+        </div>
+        {(viewMonth !== thisMonth || viewYear !== thisYear) && (
+          <button
+            onClick={() => { setViewMonth(thisMonth); setViewYear(thisYear); }}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+          >
+            Back to current month
+          </button>
+        )}
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-5 gap-4">
         {[
           { label: 'Owed To Us',           value: owedToUs,           color: 'text-indigo-600', sub: totalExpenses > 0 ? `incl. ${formatCurrency(totalExpenses)} expenses` : undefined },
           { label: 'We Owe Them',           value: weOweThem,          color: 'text-amber-600'  },
-          { label: `Collected (${MONTHS[thisMonth - 1]})`, value: collectedThisMonth, color: 'text-emerald-600'},
-          { label: `Paid Out (${MONTHS[thisMonth - 1]})`,  value: paidOutThisMonth,   color: 'text-rose-600'   },
-          { label: `Rides (${MONTHS[thisMonth - 1]})`,     value: brokerRides.reduce((s, r) => s + r.amount, 0), color: 'text-blue-600', sub: brokerRides.length > 0 ? `${brokerRides.length} rides` : undefined },
+          { label: `Collected (${MONTHS[viewMonth - 1]})`, value: collectedThisMonth, color: 'text-emerald-600'},
+          { label: `Paid Out (${MONTHS[viewMonth - 1]})`,  value: paidOutThisMonth,   color: 'text-rose-600'   },
+          { label: `Rides (${MONTHS[viewMonth - 1]})`,     value: brokerRides.reduce((s, r) => s + r.amount, 0), color: 'text-blue-600', sub: brokerRides.length > 0 ? `${brokerRides.length} rides` : undefined },
         ].map((c) => (
           <div key={c.label} className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-gray-200">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{c.label}</p>
@@ -879,7 +913,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
-            Rides ({MONTHS[thisMonth - 1]} {thisYear})
+            Rides ({MONTHS[viewMonth - 1]} {viewYear})
             {brokerRides.length > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{brokerRides.length} rides · {formatCurrency(brokerRides.reduce((s, r) => s + r.amount, 0))}</span>}
           </h2>
         </div>
