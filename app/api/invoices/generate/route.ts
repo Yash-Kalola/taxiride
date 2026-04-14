@@ -7,9 +7,10 @@ import { calcBase, calcHST } from '@/lib/tax';
 import { INVOICE_NUMBER_SEED, MONTHS } from '@/lib/constants';
 
 const bodySchema = z.object({
-  companyId: z.string().min(1),
-  month:     z.string().min(1),
-  year:      z.coerce.number().int(),
+  companyId:    z.string().min(1),
+  month:        z.string().min(1),
+  year:         z.coerce.number().int(),
+  invoiceDate:  z.string().optional(),   // optional custom invoice date (yyyy-MM-dd)
 });
 
 export async function POST(request: NextRequest) {
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const { companyId, month, year } = parsed.data;
+  const { companyId, month, year, invoiceDate } = parsed.data;
 
   try {
     const company = await prisma.company.findUnique({ where: { id: companyId } });
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
       const maxInvoice = await tx.invoice.findFirst({ orderBy: { invoiceNumber: 'desc' } });
       const invoiceNumber = (maxInvoice?.invoiceNumber ?? INVOICE_NUMBER_SEED - 1) + 1;
 
-      const today = new Date();
+      const baseDate = invoiceDate ? new Date(invoiceDate + 'T00:00:00') : new Date();
 
       // Flag if current total dropped below the most recent prior invoice for this company
       const priorInvoices = await tx.invoice.findMany({
@@ -62,7 +63,8 @@ export async function POST(request: NextRequest) {
           amountPreTax: base,
           hst,
           total: grandTotal,
-          dueDate:   format(addDays(today, 30), 'yyyy-MM-dd'),
+          dateSent:  invoiceDate ? format(baseDate, 'yyyy-MM-dd') : '',
+          dueDate:   format(addDays(baseDate, 30), 'yyyy-MM-dd'),
           status:    'DRAFT',
           flagged,
           rides:     { connect: rides.map((r) => ({ id: r.id })) },

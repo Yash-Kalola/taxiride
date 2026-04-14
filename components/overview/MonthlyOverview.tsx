@@ -48,10 +48,16 @@ export default function MonthlyOverview({
   }, [actionMenu]);
 
   async function patchInvoice(id: string, data: Record<string, unknown>) {
-    const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (res.ok) {
-      const updated = await res.json();
-      setInvoiceData(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (res.ok) {
+        const updated = await res.json();
+        setInvoiceData(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
+      } else {
+        alert('Failed to update invoice — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
     setActionMenu(null);
   }

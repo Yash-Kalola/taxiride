@@ -38,18 +38,21 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
 
     // If this ride belonged to an invoice, recalculate the invoice totals (excluding voided)
     if (ride.invoiceId) {
-      const remainingRides = await prisma.ride.findMany({
-        where: { invoiceId: ride.invoiceId, voided: false },
-        select: { amount: true },
-      });
-      const newTotal = remainingRides.reduce((s, r) => s + r.amount, 0);
-      const newBase  = calcBase(newTotal);
-      const newHST   = calcHST(newTotal);
+      const invoice = await prisma.invoice.findUnique({ where: { id: ride.invoiceId } });
+      if (invoice) {
+        const remainingRides = await prisma.ride.findMany({
+          where: { invoiceId: ride.invoiceId, voided: false },
+          select: { amount: true },
+        });
+        const newTotal = remainingRides.reduce((s, r) => s + r.amount, 0);
+        const newBase  = calcBase(newTotal);
+        const newHST   = calcHST(newTotal);
 
-      await prisma.invoice.update({
-        where: { id: ride.invoiceId },
-        data:  { amountPreTax: newBase, hst: newHST, total: newTotal },
-      });
+        await prisma.invoice.update({
+          where: { id: ride.invoiceId },
+          data:  { amountPreTax: newBase, hst: newHST, total: newTotal },
+        });
+      }
     }
 
     return new NextResponse(null, { status: 204 });

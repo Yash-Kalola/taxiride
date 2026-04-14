@@ -38,7 +38,7 @@ model Ride {
   companyId       String
   company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   invoiceId       String?
-  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now())
 }
 
@@ -46,7 +46,7 @@ model Invoice {
   id            String        @id @default(cuid())
   invoiceNumber Int           @unique
   companyId     String
-  company       Company       @relation(fields: [companyId], references: [id])
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   month         String
   year          Int
   amountPreTax  Float

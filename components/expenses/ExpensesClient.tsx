@@ -109,18 +109,30 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
 
   async function deleteExpense(id: string) {
     if (!confirm('Delete this expense?')) return;
-    const res = await fetch(`/api/brokers/expenses/${id}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) setExpenses(prev => prev.filter(e => e.id !== id));
+    try {
+      const res = await fetch(`/api/brokers/expenses/${id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setExpenses(prev => prev.filter(e => e.id !== id));
+      } else {
+        alert('Failed to delete expense — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
+    }
   }
 
   async function togglePaid(e: Expense) {
-    const res = await fetch(`/api/brokers/expenses/${e.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paid: !e.paid }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setExpenses(prev => prev.map(x => x.id === e.id ? data : x));
+    try {
+      const res = await fetch(`/api/brokers/expenses/${e.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid: !e.paid }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExpenses(prev => prev.map(x => x.id === e.id ? data : x));
+      }
+    } catch {
+      console.error('Failed to toggle paid status');
     }
   }
 

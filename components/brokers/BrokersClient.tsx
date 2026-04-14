@@ -86,7 +86,7 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data   = await res.json();
       if (!res.ok) { setError(data.error?.fieldErrors ? JSON.stringify(data.error.fieldErrors) : data.error ?? 'Failed'); return; }
-      const updated = await fetch('/api/brokers').then((r) => r.json());
+      const updated = await fetch('/api/brokers').then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
       setBrokers(updated);
       setModal(null);
     } catch { setError('Network error'); }
@@ -94,19 +94,33 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
   }
 
   async function toggleActive(b: Broker) {
-    const data = b.isActive
-      ? { isActive: false, endDate: new Date().toISOString() }
-      : { isActive: true,  endDate: null };
-    const res = await fetch(`/api/brokers/${b.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (res.ok) {
-      const updated = await fetch('/api/brokers').then((r) => r.json());
-      setBrokers(updated);
+    try {
+      const data = b.isActive
+        ? { isActive: false, endDate: new Date().toISOString() }
+        : { isActive: true,  endDate: null };
+      const res = await fetch(`/api/brokers/${b.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (res.ok) {
+        const updated = await fetch('/api/brokers').then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
+        setBrokers(updated);
+      } else {
+        alert('Failed to update broker status — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
   async function confirmDelete(id: string) {
-    await fetch(`/api/brokers/${id}`, { method: 'DELETE' });
-    setBrokers((prev) => prev.filter((b) => b.id !== id));
+    try {
+      const res = await fetch(`/api/brokers/${id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setBrokers((prev) => prev.filter((b) => b.id !== id));
+      } else {
+        alert('Failed to delete broker — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
+    }
     setDeleteId(null);
   }
 

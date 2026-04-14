@@ -15,6 +15,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const paymentMethod = parsed.success && parsed.data?.paymentMethod ? parsed.data.paymentMethod : undefined;
     const paymentRef    = parsed.success && parsed.data?.paymentRef    ? parsed.data.paymentRef    : undefined;
 
+    // Validate the transaction exists and isn't already PAID
+    const existing = await prisma.brokerTransaction.findUnique({ where: { id: params.id } });
+    if (!existing) return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
+    if (existing.status === 'PAID') return NextResponse.json({ error: 'Transaction is already paid' }, { status: 409 });
+    if (existing.status === 'VOID') return NextResponse.json({ error: 'Cannot pay a voided transaction' }, { status: 409 });
+
     const tx = await prisma.brokerTransaction.update({
       where: { id: params.id },
       data: {

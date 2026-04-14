@@ -217,14 +217,18 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       const allEscalated: Transaction[] = [];
 
       for (let w = fromWeek; w <= toWeek; w++) {
-        await fetch(`/api/brokers/${broker.id}/generate-week`, {
+        const weekRes = await fetch(`/api/brokers/${broker.id}/generate-week`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ month: thisMonth, year: thisYear, weekNumber: w }),
         });
+        if (!weekRes.ok) {
+          const err = await weekRes.json().catch(() => null);
+          console.error(`Failed to generate week ${w}:`, err?.error ?? weekRes.statusText);
+        }
       }
 
       // Refetch full broker data from server to avoid any stale-state merging
-      const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
+      const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
       if (fresh?.transactions) setTransactions(fresh.transactions);
       if (fresh) setBroker((prev) => ({ ...prev, ...fresh }));
 
@@ -245,8 +249,9 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     didFetchRides.current = true;
     setRidesLoading(true);
     fetch(`/api/brokers/${broker.id}/rides?month=${thisMonth}&year=${thisYear}`)
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
       .then(data => { if (Array.isArray(data)) setBrokerRides(data); })
+      .catch(err => console.error('Failed to fetch rides:', err))
       .finally(() => setRidesLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -257,16 +262,20 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     if (didAutoGenRC.current || !broker.isActive || !broker.recurringCharges?.length) return;
     didAutoGenRC.current = true;
     fetch(`/api/brokers/${broker.id}/generate-recurring`, { method: 'POST' })
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
       .then(data => {
         if (data?.count > 0) {
           // Refetch transactions to include newly created ones
-          fetch(`/api/brokers/${broker.id}`).then(r => r.json()).then(fresh => {
-            if (fresh?.transactions) setTransactions(fresh.transactions);
-            if (fresh) setBroker((prev) => ({ ...prev, ...fresh }));
-          });
+          fetch(`/api/brokers/${broker.id}`)
+            .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+            .then(fresh => {
+              if (fresh?.transactions) setTransactions(fresh.transactions);
+              if (fresh) setBroker((prev) => ({ ...prev, ...fresh }));
+            })
+            .catch(err => console.error('Failed to refetch broker:', err));
         }
-      });
+      })
+      .catch(err => console.error('Failed to generate recurring charges:', err));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -288,23 +297,35 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
 
   async function deleteRC(id: string) {
     if (!confirm('Delete this recurring charge?')) return;
-    const res = await fetch(`/api/brokers/recurring/${id}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) {
-      setBroker(prev => ({ ...prev, recurringCharges: (prev.recurringCharges || []).filter(rc => rc.id !== id) }));
+    try {
+      const res = await fetch(`/api/brokers/recurring/${id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setBroker(prev => ({ ...prev, recurringCharges: (prev.recurringCharges || []).filter(rc => rc.id !== id) }));
+      } else {
+        alert('Failed to delete recurring charge.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
   async function toggleRCActive(id: string, isActive: boolean) {
-    const res = await fetch(`/api/brokers/recurring/${id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !isActive }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setBroker(prev => ({
-        ...prev,
-        recurringCharges: (prev.recurringCharges || []).map(rc => rc.id === id ? updated : rc),
-      }));
+    try {
+      const res = await fetch(`/api/brokers/recurring/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !isActive }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setBroker(prev => ({
+          ...prev,
+          recurringCharges: (prev.recurringCharges || []).map(rc => rc.id === id ? updated : rc),
+        }));
+      } else {
+        alert('Failed to update recurring charge.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
@@ -341,7 +362,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       setBroker((prev) => ({ ...prev, ...data }));
       // If pending rent was updated, refetch transactions
       if (rateChanged && updatePendingRent) {
-        const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
+        const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
         if (fresh?.transactions) setTransactions(fresh.transactions);
         if (fresh) setBroker(prev => ({ ...prev, ...fresh }));
       }
@@ -358,7 +379,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       setBackfillMsg(data.message || 'Done');
       if (data.created > 0) {
         // Refetch transactions
-        const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
+        const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
         if (fresh?.transactions) setTransactions(fresh.transactions);
         if (fresh) setBroker(prev => ({ ...prev, ...fresh }));
       }
@@ -368,11 +389,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   }
 
   async function toggleActive() {
-    const data = broker.isActive
-      ? { isActive: false, endDate: new Date().toISOString() }
-      : { isActive: true,  endDate: null };
-    const res = await fetch(`/api/brokers/${broker.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (res.ok) { const d = await res.json(); setBroker((prev) => ({ ...prev, ...d })); }
+    try {
+      const data = broker.isActive
+        ? { isActive: false, endDate: new Date().toISOString() }
+        : { isActive: true,  endDate: null };
+      const res = await fetch(`/api/brokers/${broker.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (res.ok) { const d = await res.json(); setBroker((prev) => ({ ...prev, ...d })); }
+      else { alert('Failed to update broker status — please try again.'); }
+    } catch {
+      alert('Network error — please try again.');
+    }
   }
 
   // --- Add transaction ---
@@ -428,46 +454,71 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   }
 
   async function markPaid(txId: string, method?: string, ref?: string) {
-    const body: Record<string, string> = {};
-    if (method) body.paymentMethod = method;
-    if (ref)    body.paymentRef = ref;
-    const res = await fetch(`/api/brokers/transactions/${txId}/pay`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+    try {
+      const body: Record<string, string> = {};
+      if (method) body.paymentMethod = method;
+      if (ref)    body.paymentRef = ref;
+      const res = await fetch(`/api/brokers/transactions/${txId}/pay`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error ?? 'Failed to mark as paid.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
     setShowPayModal(false);
   }
 
   async function markUnpaid(txId: string) {
-    const res = await fetch(`/api/brokers/transactions/${txId}/pay`, { method: 'DELETE' });
-    if (res.ok) {
-      const updated = await res.json();
-      setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+    try {
+      const res = await fetch(`/api/brokers/transactions/${txId}/pay`, { method: 'DELETE' });
+      if (res.ok) {
+        const updated = await res.json();
+        setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+      } else {
+        alert('Failed to mark as unpaid.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
   async function voidTx(txId: string) {
     if (!confirm('Void this transaction? It will remain visible but excluded from all totals.')) return;
-    const res = await fetch(`/api/brokers/transactions/${txId}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'VOID' }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+    try {
+      const res = await fetch(`/api/brokers/transactions/${txId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'VOID' }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
+      } else {
+        alert('Failed to void transaction.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
   async function deleteTx(txId: string) {
     if (!confirm('Delete this transaction? This cannot be undone.')) return;
-    const res = await fetch(`/api/brokers/transactions/${txId}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) {
-      setTransactions((prev) => prev.filter((t) => t.id !== txId));
+    try {
+      const res = await fetch(`/api/brokers/transactions/${txId}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setTransactions((prev) => prev.filter((t) => t.id !== txId));
+      } else {
+        alert('Failed to delete transaction.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
@@ -496,11 +547,17 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
 
   async function deleteAttachment(attId: string) {
     if (!attTxId) return;
-    const res = await fetch(`/api/brokers/transactions/attachments/${attId}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) {
-      setTransactions(prev => prev.map(t =>
-        t.id === attTxId ? { ...t, attachments: (t.attachments || []).filter(a => a.id !== attId) } : t
-      ));
+    try {
+      const res = await fetch(`/api/brokers/transactions/attachments/${attId}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setTransactions(prev => prev.map(t =>
+          t.id === attTxId ? { ...t, attachments: (t.attachments || []).filter(a => a.id !== attId) } : t
+        ));
+      } else {
+        setAttError('Failed to delete attachment.');
+      }
+    } catch {
+      setAttError('Network error — please try again.');
     }
   }
 

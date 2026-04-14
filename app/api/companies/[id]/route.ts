@@ -13,12 +13,16 @@ const updateSchema = z.object({
 });
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const company = await prisma.company.findUnique({
-    where: { id: params.id },
-    include: { _count: { select: { rides: true, invoices: true } } },
-  });
-  if (!company) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json(company);
+  try {
+    const company = await prisma.company.findUnique({
+      where: { id: params.id },
+      include: { _count: { select: { rides: true, invoices: true } } },
+    });
+    if (!company) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json(company);
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
@@ -37,6 +41,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Must delete invoices first (Invoice→Company has no onDelete cascade)
+    // First unlink rides from invoices, then delete invoices, then delete company (rides cascade)
+    const invoices = await prisma.invoice.findMany({ where: { companyId: params.id }, select: { id: true } });
+    if (invoices.length > 0) {
+      const invoiceIds = invoices.map((i) => i.id);
+      await prisma.ride.updateMany({ where: { invoiceId: { in: invoiceIds } }, data: { invoiceId: null } });
+      await prisma.invoice.deleteMany({ where: { companyId: params.id } });
+    }
     await prisma.company.delete({ where: { id: params.id } });
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {

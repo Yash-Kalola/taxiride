@@ -58,7 +58,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
   const [sortKey,       setSortKey]       = useState<SortKey>('invoiceNumber');
   const [sortDir,       setSortDir]       = useState<SortDir>('desc');
   const [showGenerate,  setShowGenerate]  = useState(false);
-  const [genForm, setGenForm]             = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear() });
+  const [genForm, setGenForm]             = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear(), invoiceDate: '' });
   const [showPayModal, setShowPayModal] = useState(false);
   const [payInvId, setPayInvId]         = useState('');
   const [payMethod, setPayMethod]       = useState('');
@@ -122,10 +122,16 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
   }, [invoices]);
 
   async function patch(id: string, data: object) {
-    const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (res.ok) {
-      const updated = await res.json();
-      setInvoices((prev) => prev.map((i) => i.id === id ? { ...i, ...updated } : i));
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (res.ok) {
+        const updated = await res.json();
+        setInvoices((prev) => prev.map((i) => i.id === id ? { ...i, ...updated } : i));
+      } else {
+        alert('Failed to update invoice — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
@@ -134,22 +140,27 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
       ? `Delete Invoice #${invoiceNumber}? This invoice has already been ${status.toLowerCase()}. This cannot be undone. All rides in this invoice will also be permanently deleted.`
       : `Delete Invoice #${invoiceNumber}? This cannot be undone. All rides in this invoice will also be permanently deleted.`;
     if (!confirm(warning)) return;
-    const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) {
-      setInvoices((prev) => prev.filter((i) => i.id !== id));
-    } else {
-      alert('Delete failed — please try again.');
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setInvoices((prev) => prev.filter((i) => i.id !== id));
+      } else {
+        alert('Delete failed — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
   async function generate() {
     setGenerating(true); setGenResult(null);
     try {
-      const res  = await fetch('/api/invoices/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(genForm) });
+      const payload = { ...genForm, ...(genForm.invoiceDate ? {} : { invoiceDate: undefined }) };
+      const res  = await fetch('/api/invoices/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) { setGenResult({ error: data.error ?? 'Failed' }); return; }
       setGenResult({ invoiceId: data.invoiceId, invoiceNumber: data.invoiceNumber, flagged: data.flagged });
-      const updated = await fetch('/api/invoices').then((r) => r.json());
+      const updated = await fetch('/api/invoices').then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
       setInvoices(updated);
     } catch { setGenResult({ error: 'Network error' }); }
     finally { setGenerating(false); }
@@ -324,6 +335,17 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
             <Select label="Year" value={genForm.year} onChange={(e) => setGenForm((f) => ({ ...f, year: parseInt(e.target.value) }))}>
               {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
             </Select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Invoice Date <span className="text-xs font-normal text-gray-400">(optional — defaults to date sent)</span>
+            </label>
+            <input
+              type="date"
+              value={genForm.invoiceDate}
+              onChange={(e) => setGenForm((f) => ({ ...f, invoiceDate: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
           </div>
 
           {genResult?.error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{genResult.error}</p>}

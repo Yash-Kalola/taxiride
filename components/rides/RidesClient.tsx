@@ -138,7 +138,7 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
       const skippedMsg = skipped > 0 ? ` (${skipped} row${skipped > 1 ? 's' : ''} skipped — zero amount)` : '.';
       setImportResult(`Successfully imported ${data.imported} ride${data.imported !== 1 ? 's' : ''}${skippedMsg}`);
       // Refresh rides
-      const updated = await fetch(`/api/rides?companyId=${importForm.companyId}&month=${importForm.month}&year=${importForm.year}`).then((r) => r.json());
+      const updated = await fetch(`/api/rides?companyId=${importForm.companyId}&month=${importForm.month}&year=${importForm.year}`).then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
       setRides((prev) => [...updated.filter((r: Ride) => !prev.some((p) => p.id === r.id)), ...prev]);
     } catch (e) { setError(String(e)); }
     finally { setSaving(false); }

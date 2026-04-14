@@ -104,21 +104,33 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
   }
 
   async function toggleActive(v: Vehicle) {
-    const res = await fetch(`/api/vehicles/${v.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !v.isActive }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setVehicles((prev) => prev.map((x) => x.id === v.id ? updated : x));
+    try {
+      const res = await fetch(`/api/vehicles/${v.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !v.isActive }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setVehicles((prev) => prev.map((x) => x.id === v.id ? updated : x));
+      } else {
+        alert('Failed to update vehicle — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 
   async function deleteVehicle(v: Vehicle) {
     if (!confirm(`Delete Cab #${v.cabNumber}? This cannot be undone.`)) return;
-    const res = await fetch(`/api/vehicles/${v.id}`, { method: 'DELETE' });
-    if (res.ok || res.status === 204) {
-      setVehicles((prev) => prev.filter((x) => x.id !== v.id));
+    try {
+      const res = await fetch(`/api/vehicles/${v.id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setVehicles((prev) => prev.filter((x) => x.id !== v.id));
+      } else {
+        alert('Failed to delete vehicle — please try again.');
+      }
+    } catch {
+      alert('Network error — please try again.');
     }
   }
 

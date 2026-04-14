@@ -43,7 +43,7 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
       const data = await res.json();
       if (!res.ok) { setError(data.error?.fieldErrors ? JSON.stringify(data.error.fieldErrors) : data.error ?? 'Failed'); return; }
       // Refresh list
-      const updated = await fetch('/api/companies').then((r) => r.json());
+      const updated = await fetch('/api/companies').then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
       setCompanies(updated);
       setModal(null);
     } catch { setError('Network error'); }
@@ -51,8 +51,17 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
   }
 
   async function confirmDelete(id: string) {
-    await fetch(`/api/companies/${id}`, { method: 'DELETE' });
-    setCompanies((prev) => prev.filter((c) => c.id !== id));
+    try {
+      const res = await fetch(`/api/companies/${id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setCompanies((prev) => prev.filter((c) => c.id !== id));
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error ?? 'Delete failed — this company may have invoices. Remove its invoices first.');
+      }
+    } catch {
+      alert('Network error — please try again.');
+    }
     setDeleteId(null);
   }
 

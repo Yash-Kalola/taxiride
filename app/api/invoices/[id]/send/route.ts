@@ -5,23 +5,40 @@ import { renderInvoicePDF } from '@/lib/pdf';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Company, Ride, Invoice } from '@prisma/client';
 
-export async function POST(_: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Accept optional custom dates from the request body
+    const body = await request.json().catch(() => ({}));
+    const customDateSent = typeof body?.dateSent === 'string' && body.dateSent ? body.dateSent : null;
+    const customDueDate  = typeof body?.dueDate  === 'string' && body.dueDate  ? body.dueDate  : null;
+
     const invoice = await prisma.invoice.findUnique({
       where: { id: params.id },
       include: { company: true, rides: { where: { voided: false } } },
     });
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
-    const pdfBuffer = await renderInvoicePDF(
-      invoice.company as Company,
-      invoice.rides as Ride[],
-      invoice as Invoice
-    );
-
+    // Use custom dates if provided, otherwise fall back to today / today+30
     const today      = new Date();
-    const todayStr   = format(today, 'yyyy-MM-dd');
-    const dueDateStr = format(addDays(today, 30), 'yyyy-MM-dd');
+    const dateSentStr = customDateSent || invoice.dateSent || format(today, 'yyyy-MM-dd');
+    const dueDateStr  = customDueDate  || invoice.dueDate  || format(addDays(new Date(dateSentStr), 30), 'yyyy-MM-dd');
+
+    // Update invoice with dates BEFORE rendering PDF so the PDF shows the correct date
+    const preUpdated = await prisma.invoice.update({
+      where: { id: params.id },
+      data: {
+        status:   'PENDING',
+        dateSent: dateSentStr,
+        dueDate:  dueDateStr,
+      },
+      include: { company: true, rides: { where: { voided: false } } },
+    });
+
+    const pdfBuffer = await renderInvoicePDF(
+      preUpdated.company as Company,
+      preUpdated.rides as Ride[],
+      preUpdated as unknown as Invoice
+    );
 
     let emailError: string | null = null;
     try {
@@ -38,16 +55,8 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     } catch (err) {
       emailError = String(err);
     }
-    const updated = await prisma.invoice.update({
-      where: { id: params.id },
-      data: {
-        status:   'PENDING',
-        dateSent: todayStr,
-        dueDate:  dueDateStr,
-      },
-    });
 
-    return NextResponse.json({ success: true, emailError, invoice: updated });
+    return NextResponse.json({ success: true, emailError, invoice: preUpdated });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

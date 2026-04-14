@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
+import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import { formatCurrency } from '@/lib/tax';
 
@@ -14,20 +15,36 @@ interface Invoice {
   amountPreTax: number; hst: number; total: number;
   dateSent: string; dueDate: string; status: string;
   notes: string; flagged: boolean; verified: boolean;
+  paymentMethod?: string | null; paymentRef?: string;
   company: Company; rides: Ride[];
 }
+
+const PAYMENT_METHODS = [
+  { value: 'DEBIT',      label: 'Debit' },
+  { value: 'CREDIT',     label: 'Credit' },
+  { value: 'E_TRANSFER', label: 'E-Transfer' },
+  { value: 'CHEQUE',     label: 'Cheque' },
+  { value: 'CASH',       label: 'Cash' },
+  { value: 'OTHER',      label: 'Other' },
+] as const;
 
 export default function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) {
   const router = useRouter();
   const [invoice,   setInvoice]   = useState(initial);
   const [rides,     setRides]     = useState<Ride[]>(initial.rides);
   const [notes,     setNotes]     = useState(initial.notes ?? '');
+  const [dateSent,  setDateSent]  = useState(initial.dateSent ?? '');
+  const [dueDate,   setDueDate]   = useState(initial.dueDate ?? '');
   const [saving,    setSaving]    = useState(false);
+  const [savingDates, setSavingDates] = useState(false);
   const [sending,   setSending]   = useState(false);
   const [resending, setResending] = useState(false);
   const [deleting,  setDeleting]  = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [msg,       setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payMethod, setPayMethod]       = useState('');
+  const [payRef, setPayRef]             = useState('');
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -40,13 +57,38 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     setSaving(false);
   }
 
+  async function saveDates() {
+    setSavingDates(true); setMsg(null);
+    const res = await fetch(`/api/invoices/${invoice.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dateSent, dueDate }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setInvoice((prev) => ({ ...prev, dateSent: updated.dateSent ?? dateSent, dueDate: updated.dueDate ?? dueDate }));
+      setMsg({ type: 'ok', text: 'Invoice dates saved.' });
+    } else {
+      setMsg({ type: 'err', text: 'Failed to save dates.' });
+    }
+    setSavingDates(false);
+  }
+
   async function send() {
     if (!confirm(`Send Invoice #${invoice.invoiceNumber} to ${invoice.company.email || '(no email set)'}?`)) return;
     setSending(true); setMsg(null);
-    const res = await fetch(`/api/invoices/${invoice.id}/send`, { method: 'POST' });
+    const res = await fetch(`/api/invoices/${invoice.id}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(dateSent ? { dateSent } : {}),
+        ...(dueDate  ? { dueDate }  : {}),
+      }),
+    });
     const data = await res.json();
     if (res.ok) {
-      setInvoice((prev) => ({ ...prev, status: 'PENDING', dateSent: data.invoice.dateSent }));
+      setInvoice((prev) => ({ ...prev, status: 'PENDING', dateSent: data.invoice.dateSent, dueDate: data.invoice.dueDate }));
+      setDateSent(data.invoice.dateSent ?? '');
+      setDueDate(data.invoice.dueDate ?? '');
       setMsg(data.emailError
         ? { type: 'warn', text: 'Invoice marked as sent. Email could not be delivered — check SMTP settings in Vercel.' }
         : { type: 'ok',  text: 'Invoice sent and emailed successfully.' }
@@ -85,9 +127,23 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     setResending(false);
   }
 
-  async function markPaid() {
-    const res = await fetch(`/api/invoices/${invoice.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'PAID' }) });
-    if (res.ok) setInvoice((prev) => ({ ...prev, status: 'PAID' }));
+  async function confirmPaid() {
+    const data: Record<string, string> = { status: 'PAID' };
+    if (payMethod) data.paymentMethod = payMethod;
+    if (payRef)    data.paymentRef = payRef;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (res.ok) {
+        const updated = await res.json();
+        setInvoice((prev) => ({ ...prev, ...updated, status: 'PAID' }));
+        setMsg({ type: 'ok', text: 'Invoice marked as paid.' });
+      } else {
+        setMsg({ type: 'err', text: 'Failed to mark as paid.' });
+      }
+    } catch {
+      setMsg({ type: 'err', text: 'Network error.' });
+    }
+    setShowPayModal(false);
   }
 
   async function voidRide(rideId: string) {
@@ -128,7 +184,15 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
           <p className="mt-1 text-sm text-gray-500">{invoice.company.companyName} · {invoice.month} {invoice.year}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={sv} />
+          <div className="flex items-center gap-1.5">
+            <Badge variant={sv} />
+            {invoice.status === 'PAID' && invoice.paymentMethod && (
+              <span className="text-[11px] text-gray-400">
+                {PAYMENT_METHODS.find(p => p.value === invoice.paymentMethod)?.label ?? invoice.paymentMethod}
+                {invoice.paymentRef ? ` #${invoice.paymentRef}` : ''}
+              </span>
+            )}
+          </div>
           <Button variant="secondary" onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')}>
             Download PDF
           </Button>
@@ -156,7 +220,7 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
                 </div>
               )}
               {invoice.status === 'PENDING' && (
-                <Button variant="primary" onClick={markPaid} className="bg-emerald-600 hover:bg-emerald-700">Mark as Paid</Button>
+                <Button variant="primary" onClick={() => { setPayMethod(''); setPayRef(''); setShowPayModal(true); }} className="bg-emerald-600 hover:bg-emerald-700">Mark as Paid</Button>
               )}
             </>
           )}
@@ -191,13 +255,48 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
         {/* Invoice meta */}
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Details</p>
+          {/* Invoice # */}
+          <div className="flex justify-between py-1.5 text-sm border-b border-gray-50">
+            <span className="text-gray-500">Invoice #</span>
+            <span className="font-medium text-gray-900">#{invoice.invoiceNumber}</span>
+          </div>
+          {/* Editable Invoice Date */}
+          <div className="flex justify-between items-center py-1.5 text-sm border-b border-gray-50">
+            <span className="text-gray-500">Invoice Date</span>
+            <input
+              type="date"
+              className="rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-[160px] text-right"
+              value={dateSent}
+              onChange={(e) => setDateSent(e.target.value)}
+            />
+          </div>
+          {/* Editable Due Date */}
+          <div className="flex justify-between items-center py-1.5 text-sm border-b border-gray-50">
+            <span className="text-gray-500">Due Date</span>
+            <input
+              type="date"
+              className="rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-[160px] text-right"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+          {/* Save Dates button — show when dates changed */}
+          {(dateSent !== (invoice.dateSent ?? '') || dueDate !== (invoice.dueDate ?? '')) && (
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={saveDates}
+                disabled={savingDates}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+              >
+                {savingDates ? 'Saving…' : 'Save Dates'}
+              </button>
+            </div>
+          )}
+          {/* Totals */}
           {[
-            ['Invoice #',     `#${invoice.invoiceNumber}`],
-            ['Date Sent',     invoice.dateSent || '—'],
-            ['Due Date',      invoice.dueDate  || '—'],
-            ['Subtotal',      formatCurrency(invoice.amountPreTax)],
-            ['HST (13%)',     formatCurrency(invoice.hst)],
-            ['Total',         formatCurrency(invoice.total)],
+            ['Subtotal',  formatCurrency(invoice.amountPreTax)],
+            ['HST (13%)', formatCurrency(invoice.hst)],
+            ['Total',     formatCurrency(invoice.total)],
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between py-1.5 text-sm border-b border-gray-50 last:border-0">
               <span className="text-gray-500">{k}</span>
@@ -275,6 +374,45 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
           </table>
         </div>
       )}
+
+      {/* Mark Paid Modal */}
+      <Modal open={showPayModal} onClose={() => setShowPayModal(false)} title="Mark Invoice as Paid">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Select payment method:</p>
+          <div className="grid grid-cols-3 gap-2">
+            {PAYMENT_METHODS.map((pm) => (
+              <button
+                key={pm.value}
+                type="button"
+                onClick={() => setPayMethod(pm.value)}
+                className={`rounded-xl border-2 px-3 py-3 text-center transition-colors ${
+                  payMethod === pm.value
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <p className="text-sm font-semibold">{pm.label}</p>
+              </button>
+            ))}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reference # <span className="text-xs font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="text" placeholder="e.g. cheque #, confirmation code"
+              value={payRef} onChange={e => setPayRef(e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowPayModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={confirmPaid} className="bg-emerald-600 hover:bg-emerald-700">
+              Confirm Payment
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
