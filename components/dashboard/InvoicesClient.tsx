@@ -14,8 +14,18 @@ interface Invoice {
   id: string; invoiceNumber: number; companyId: string; month: string; year: number;
   amountPreTax: number; hst: number; total: number; dateSent: string; dueDate: string;
   status: string; verified: boolean; flagged: boolean;
+  paymentMethod: string | null; paymentRef: string;
   company: { companyName: string; accountId: string };
 }
+
+const PAYMENT_METHODS = [
+  { value: 'DEBIT',      label: 'Debit' },
+  { value: 'CREDIT',     label: 'Credit' },
+  { value: 'E_TRANSFER', label: 'E-Transfer' },
+  { value: 'CHEQUE',     label: 'Cheque' },
+  { value: 'CASH',       label: 'Cash' },
+  { value: 'OTHER',      label: 'Other' },
+] as const;
 
 type SortKey = 'invoiceNumber' | 'companyName' | 'total';
 type SortDir = 'asc' | 'desc';
@@ -49,6 +59,10 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
   const [sortDir,       setSortDir]       = useState<SortDir>('desc');
   const [showGenerate,  setShowGenerate]  = useState(false);
   const [genForm, setGenForm]             = useState({ companyId: '', month: String(MONTHS[new Date().getMonth()]), year: new Date().getFullYear() });
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payInvId, setPayInvId]         = useState('');
+  const [payMethod, setPayMethod]       = useState('');
+  const [payRef, setPayRef]             = useState('');
   const [generating,    setGenerating]    = useState(false);
   const [genResult,     setGenResult]     = useState<{ invoiceId?: string; invoiceNumber?: number; flagged?: boolean; error?: string } | null>(null);
 
@@ -262,7 +276,15 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.month} {inv.year}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.dateSent || '—'}</td>
                       <td className="px-4 py-3.5 text-sm text-gray-500">{inv.dueDate || '—'}</td>
-                      <td className="px-4 py-3.5"><Badge variant={sv} /></td>
+                      <td className="px-4 py-3.5">
+                        <Badge variant={sv} />
+                        {inv.status === 'PAID' && inv.paymentMethod && (
+                          <span className="ml-1 text-[10px] text-gray-400">
+                            {PAYMENT_METHODS.find(p => p.value === inv.paymentMethod)?.label ?? inv.paymentMethod}
+                            {inv.paymentRef ? ` #${inv.paymentRef}` : ''}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-1">
                           <Button size="sm" variant="ghost" onClick={() => window.open(`/api/invoices/${inv.id}/pdf`, '_blank')}>PDF</Button>
@@ -270,7 +292,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                             <Button size="sm" variant="ghost">Edit</Button>
                           </Link>
                           {inv.status !== 'PAID'
-                            ? <Button size="sm" variant="ghost" onClick={() => patch(inv.id, { status: 'PAID' })} className="text-emerald-600 hover:bg-emerald-50">Mark Paid</Button>
+                            ? <Button size="sm" variant="ghost" onClick={() => { setPayInvId(inv.id); setPayMethod(''); setPayRef(''); setShowPayModal(true); }} className="text-emerald-600 hover:bg-emerald-50">Mark Paid</Button>
                             : <Button size="sm" variant="ghost" onClick={() => patch(inv.id, { status: 'PENDING' })}>Unpaid</Button>
                           }
                           {isFlagged && (
@@ -320,6 +342,51 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                 {generating ? 'Generating…' : 'Generate Draft'}
               </Button>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Mark Paid Modal */}
+      <Modal open={showPayModal} onClose={() => setShowPayModal(false)} title="Mark Invoice as Paid">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Select payment method:</p>
+          <div className="grid grid-cols-3 gap-2">
+            {PAYMENT_METHODS.map((pm) => (
+              <button
+                key={pm.value}
+                type="button"
+                onClick={() => setPayMethod(pm.value)}
+                className={`rounded-xl border-2 px-3 py-3 text-center transition-colors ${
+                  payMethod === pm.value
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <p className="text-sm font-semibold">{pm.label}</p>
+              </button>
+            ))}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reference # <span className="text-xs font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="text" placeholder="e.g. cheque #, confirmation code"
+              value={payRef} onChange={e => setPayRef(e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowPayModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => {
+              const data: Record<string, string> = { status: 'PAID' };
+              if (payMethod) data.paymentMethod = payMethod;
+              if (payRef) data.paymentRef = payRef;
+              patch(payInvId, data);
+              setShowPayModal(false);
+            }} className="bg-emerald-600 hover:bg-emerald-700">
+              Confirm Payment
+            </Button>
           </div>
         </div>
       </Modal>

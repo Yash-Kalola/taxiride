@@ -58,6 +58,9 @@ model Invoice {
   status        InvoiceStatus @default(DRAFT)
   verified      Boolean       @default(false)
   flagged       Boolean       @default(false)
+  paymentMethod PaymentMethod?
+  paymentRef    String        @default("")
+  paidDate      DateTime?
   rides         Ride[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -82,6 +85,15 @@ enum TransactionStatus {
   PAID
   PENDING
   VOID
+}
+
+enum PaymentMethod {
+  DEBIT
+  CREDIT
+  E_TRANSFER
+  CHEQUE
+  CASH
+  OTHER
 }
 
 model Broker {
@@ -115,20 +127,22 @@ model RecurringCharge {
 }
 
 model BrokerTransaction {
-  id          String            @id @default(cuid())
-  brokerId    String
-  broker      Broker            @relation(fields: [brokerId], references: [id], onDelete: Cascade)
-  type        TransactionType
-  amount      Float
-  description String            @default("")
-  dueDate     DateTime?
-  paidDate    DateTime?
-  status      TransactionStatus @default(PENDING)
-  month       Int
-  year        Int
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  attachments TransactionAttachment[]
+  id            String            @id @default(cuid())
+  brokerId      String
+  broker        Broker            @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  type          TransactionType
+  amount        Float
+  description   String            @default("")
+  dueDate       DateTime?
+  paidDate      DateTime?
+  paymentMethod PaymentMethod?
+  paymentRef    String            @default("")
+  status        TransactionStatus @default(PENDING)
+  month         Int
+  year          Int
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  attachments   TransactionAttachment[]
 }
 
 model TransactionAttachment {

@@ -3,15 +3,17 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 
 const patchSchema = z.object({
-  status:       z.enum(['DRAFT', 'PENDING', 'PAID']).optional(),
-  flagged:      z.boolean().optional(),
-  verified:     z.boolean().optional(),
-  notes:        z.string().optional(),
-  amountPreTax: z.number().optional(),
-  hst:          z.number().optional(),
-  total:        z.number().optional(),
-  dateSent:     z.string().optional(),
-  dueDate:      z.string().optional(),
+  status:        z.enum(['DRAFT', 'PENDING', 'PAID']).optional(),
+  flagged:       z.boolean().optional(),
+  verified:      z.boolean().optional(),
+  notes:         z.string().optional(),
+  amountPreTax:  z.number().optional(),
+  hst:           z.number().optional(),
+  total:         z.number().optional(),
+  dateSent:      z.string().optional(),
+  dueDate:       z.string().optional(),
+  paymentMethod: z.enum(['DEBIT', 'CREDIT', 'E_TRANSFER', 'CHEQUE', 'CASH', 'OTHER']).optional(),
+  paymentRef:    z.string().optional(),
 });
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
@@ -48,9 +50,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
+    const updateData: Record<string, unknown> = { ...parsed.data };
+    // Auto-set paidDate when marking as PAID
+    if (parsed.data.status === 'PAID') {
+      updateData.paidDate = new Date();
+    } else if (parsed.data.status === 'PENDING' || parsed.data.status === 'DRAFT') {
+      updateData.paidDate = null;
+      updateData.paymentMethod = null;
+      updateData.paymentRef = '';
+    }
     const invoice = await prisma.invoice.update({
       where: { id: params.id },
-      data: parsed.data,
+      data: updateData,
       include: { company: true },
     });
     return NextResponse.json(invoice);

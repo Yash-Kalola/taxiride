@@ -16,6 +16,7 @@ interface TxAttachment { id: string; label: string; fileName: string; filePath: 
 interface Transaction {
   id: string; brokerId: string; type: string; amount: number;
   status: string; dueDate: string | null; paidDate: string | null;
+  paymentMethod: string | null; paymentRef: string;
   description: string; month: number; year: number; createdAt: string; updatedAt: string;
   attachments?: TxAttachment[];
 }
@@ -44,6 +45,15 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TX_TYPES = ['STAND_RENT', 'COMPANY_PAYMENT', 'PRODUCT_CHARGE', 'INSURANCE', 'PAYOUT', 'OTHER'] as const;
+
+const PAYMENT_METHODS = [
+  { value: 'DEBIT',      label: 'Debit' },
+  { value: 'CREDIT',     label: 'Credit' },
+  { value: 'E_TRANSFER', label: 'E-Transfer' },
+  { value: 'CHEQUE',     label: 'Cheque' },
+  { value: 'CASH',       label: 'Cash' },
+  { value: 'OTHER',      label: 'Other' },
+] as const;
 
 function txBadgeVariant(tx: Transaction): 'paid' | 'pending' | 'overdue' | 'void' {
   if (tx.status === 'VOID')    return 'void';
@@ -97,6 +107,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [updatePendingRent, setUpdatePendingRent] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState('');
+  // Pay modal state
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payTxId, setPayTxId]         = useState<string | null>(null);
+  const [payMethod, setPayMethod]     = useState('');
+  const [payRef, setPayRef]           = useState('');
   // Attachment state
   const [attTxId, setAttTxId]         = useState<string | null>(null);
   const [showAttModal, setShowAttModal] = useState(false);
@@ -148,6 +163,8 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         status: e.paid ? 'PAID' : 'PENDING',
         dueDate: null,
         paidDate: null,
+        paymentMethod: null,
+        paymentRef: '',
         description: `${e.cabNumber ? `Cab #${e.cabNumber}` : ''}${e.note ? (e.cabNumber ? ' — ' : '') + e.note : ''}` || '—',
         month: d.getMonth() + 1,
         year: d.getFullYear(),
@@ -406,12 +423,24 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   }
 
   // --- Transaction actions ---
-  async function markPaid(txId: string) {
-    const res = await fetch(`/api/brokers/transactions/${txId}/pay`, { method: 'PATCH' });
+  function openPayModal(txId: string) {
+    setPayTxId(txId); setPayMethod(''); setPayRef(''); setShowPayModal(true);
+  }
+
+  async function markPaid(txId: string, method?: string, ref?: string) {
+    const body: Record<string, string> = {};
+    if (method) body.paymentMethod = method;
+    if (ref)    body.paymentRef = ref;
+    const res = await fetch(`/api/brokers/transactions/${txId}/pay`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     if (res.ok) {
       const updated = await res.json();
       setTransactions((prev) => prev.map((t) => t.id === txId ? updated : t));
     }
+    setShowPayModal(false);
   }
 
   async function markUnpaid(txId: string) {
@@ -685,7 +714,15 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                       <td className="px-4 py-3.5 text-sm text-gray-500">
                         {tx.dueDate ? format(new Date(tx.dueDate), 'MMM d, yyyy') : '—'}
                       </td>
-                      <td className="px-4 py-3.5"><Badge variant={bv} /></td>
+                      <td className="px-4 py-3.5">
+                        <Badge variant={bv} />
+                        {tx.status === 'PAID' && tx.paymentMethod && (
+                          <span className="ml-1.5 text-[10px] text-gray-400">
+                            {PAYMENT_METHODS.find(p => p.value === tx.paymentMethod)?.label ?? tx.paymentMethod}
+                            {tx.paymentRef ? ` #${tx.paymentRef}` : ''}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3.5">
                         {isExpense ? (
                           <Link href={`/expenses?broker=${broker.id}`} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
@@ -702,7 +739,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                               className="opacity-0 group-hover:opacity-100">Edit</Button>
                           )}
                           {!isVoid && tx.status !== 'PAID' && (
-                            <Button size="sm" variant="ghost" onClick={() => markPaid(tx.id)}
+                            <Button size="sm" variant="ghost" onClick={() => openPayModal(tx.id)}
                               className="text-emerald-600 hover:bg-emerald-50">Mark Paid</Button>
                           )}
                           {!isVoid && tx.status === 'PAID' && (
@@ -1028,6 +1065,46 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             <Button variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Button>
             <Button variant="primary" onClick={saveBroker} disabled={savingBroker}>
               {savingBroker ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Mark Paid Modal */}
+      <Modal open={showPayModal} onClose={() => setShowPayModal(false)} title="Mark as Paid">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Select how this was paid:</p>
+          <div className="grid grid-cols-3 gap-2">
+            {PAYMENT_METHODS.map((pm) => (
+              <button
+                key={pm.value}
+                type="button"
+                onClick={() => setPayMethod(pm.value)}
+                className={`rounded-xl border-2 px-3 py-3 text-center transition-colors ${
+                  payMethod === pm.value
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <p className="text-sm font-semibold">{pm.label}</p>
+              </button>
+            ))}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reference # <span className="text-xs font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="text" placeholder="e.g. cheque #, confirmation code"
+              value={payRef} onChange={e => setPayRef(e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowPayModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => payTxId && markPaid(payTxId, payMethod || undefined, payRef || undefined)}
+              className="bg-emerald-600 hover:bg-emerald-700">
+              Confirm Payment
             </Button>
           </div>
         </div>
