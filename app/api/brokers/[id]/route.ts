@@ -18,7 +18,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const broker = await prisma.broker.findUnique({
       where: { id: params.id },
       include: {
-        transactions:    { orderBy: { createdAt: 'desc' } },
+        transactions:    { orderBy: { createdAt: 'desc' }, include: { attachments: true } },
         vehicles:        { orderBy: { cabNumber: 'asc' } },
         expenses:        { orderBy: { date: 'desc' } },
         recurringCharges: { orderBy: { createdAt: 'desc' } },

@@ -59,6 +59,15 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
 
   const grandTotal = Object.values(colTotals).reduce((s, v) => s + v, 0);
 
+  // Per-broker paid/unpaid breakdown (across all time)
+  function brokerTotals(b: BrokerRow) {
+    const paid   = b.transactions.filter(t => t.status === 'PAID' && t.type !== 'PAYOUT').reduce((s, t) => s + t.amount, 0);
+    const unpaid = b.transactions.filter(t => t.status === 'PENDING' && t.type !== 'PAYOUT').reduce((s, t) => s + t.amount, 0);
+    const paidExpenses   = b.expenses.filter(e => e.paid).reduce((s, e) => s + e.amount, 0);
+    const unpaidExpenses = b.expenses.filter(e => !e.paid).reduce((s, e) => s + e.amount, 0);
+    return { paid: paid + paidExpenses, unpaid: unpaid + unpaidExpenses, total: paid + paidExpenses + unpaid + unpaidExpenses };
+  }
+
   if (brokers.length === 0) {
     return (
       <div className="space-y-6">
@@ -92,6 +101,8 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
                   {m.label}
                 </th>
               ))}
+              <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-emerald-500">Paid</th>
+              <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-amber-500">Unpaid</th>
               <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-400">Total</th>
             </tr>
           </thead>
@@ -126,6 +137,15 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
                     </td>
                   );
                 })}
+                {(() => {
+                  const bt = brokerTotals(b);
+                  return (
+                    <>
+                      <td className="px-4 py-4 text-right text-sm font-medium text-emerald-600">{formatCurrency(bt.paid)}</td>
+                      <td className="px-4 py-4 text-right text-sm font-medium text-amber-600">{formatCurrency(bt.unpaid)}</td>
+                    </>
+                  );
+                })()}
                 <td className="px-4 py-4 text-right font-semibold text-gray-900">
                   {formatCurrency(rowTotals[b.id])}
                 </td>
@@ -142,6 +162,16 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
                   {formatCurrency(colTotals[m.key])}
                 </td>
               ))}
+              {(() => {
+                const allPaid   = brokers.reduce((s, b) => s + brokerTotals(b).paid, 0);
+                const allUnpaid = brokers.reduce((s, b) => s + brokerTotals(b).unpaid, 0);
+                return (
+                  <>
+                    <td className="px-4 py-3.5 text-right font-bold text-emerald-600">{formatCurrency(allPaid)}</td>
+                    <td className="px-4 py-3.5 text-right font-bold text-amber-600">{formatCurrency(allUnpaid)}</td>
+                  </>
+                );
+              })()}
               <td className="px-4 py-3.5 text-right font-bold text-indigo-600">
                 {formatCurrency(grandTotal)}
               </td>
@@ -189,6 +219,25 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
                 <p className="text-sm text-gray-400">No vehicles assigned</p>
               )}
             </div>
+            {/* Paid / Unpaid summary */}
+            {panelBroker && (() => {
+              const bt = brokerTotals(panelBroker);
+              return (
+                <div className="border-b border-gray-100 px-5 py-4">
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Summary</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-emerald-500">Paid</p>
+                      <p className="text-sm font-bold text-emerald-700">{formatCurrency(bt.paid)}</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-amber-500">Unpaid</p>
+                      <p className="text-sm font-bold text-amber-700">{formatCurrency(bt.unpaid)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             {/* Monthly totals */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
               <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Monthly Totals</p>

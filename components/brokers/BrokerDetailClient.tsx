@@ -12,10 +12,12 @@ import { formatCurrency } from '@/lib/tax';
 import { MONTHS, YEARS } from '@/lib/constants';
 import { getCurrentWeekNum, getWeeksInMonth } from '@/lib/weeks';
 
+interface TxAttachment { id: string; label: string; fileName: string; filePath: string; fileType: string; fileSize: number; }
 interface Transaction {
   id: string; brokerId: string; type: string; amount: number;
   status: string; dueDate: string | null; paidDate: string | null;
   description: string; month: number; year: number; createdAt: string; updatedAt: string;
+  attachments?: TxAttachment[];
 }
 
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
@@ -95,6 +97,13 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [updatePendingRent, setUpdatePendingRent] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState('');
+  // Attachment state
+  const [attTxId, setAttTxId]         = useState<string | null>(null);
+  const [showAttModal, setShowAttModal] = useState(false);
+  const [attFile, setAttFile]         = useState<File | null>(null);
+  const [attLabel, setAttLabel]       = useState('');
+  const [savingAtt, setSavingAtt]     = useState(false);
+  const [attError, setAttError]       = useState('');
   const [txError,       setTxError]      = useState('');
   const [brokerError,   setBrokerError]  = useState('');
   const [filterMonth,   setFilterMonth]  = useState('');
@@ -433,6 +442,47 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     }
   }
 
+  // --- Attachment functions ---
+  function openAttachments(txId: string) {
+    setAttTxId(txId); setAttFile(null); setAttLabel(''); setAttError(''); setShowAttModal(true);
+  }
+
+  async function uploadAttachment() {
+    if (!attTxId || !attFile) { setAttError('Please select a file.'); return; }
+    setSavingAtt(true); setAttError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', attFile);
+      fd.append('label', attLabel);
+      const res = await fetch(`/api/brokers/transactions/${attTxId}/attachments`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) { setAttError(data.error ?? 'Upload failed'); return; }
+      setTransactions(prev => prev.map(t =>
+        t.id === attTxId ? { ...t, attachments: [data, ...(t.attachments || [])] } : t
+      ));
+      setAttFile(null); setAttLabel('');
+    } catch { setAttError('Network error'); }
+    finally { setSavingAtt(false); }
+  }
+
+  async function deleteAttachment(attId: string) {
+    if (!attTxId) return;
+    const res = await fetch(`/api/brokers/transactions/attachments/${attId}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      setTransactions(prev => prev.map(t =>
+        t.id === attTxId ? { ...t, attachments: (t.attachments || []).filter(a => a.id !== attId) } : t
+      ));
+    }
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  const attTx = attTxId ? transactions.find(t => t.id === attTxId) : null;
+
   const txField = (key: keyof typeof EMPTY_TX) => ({
     value: txForm[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -538,12 +588,13 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {[
           { label: 'Owed To Us',           value: owedToUs,           color: 'text-indigo-600', sub: totalExpenses > 0 ? `incl. ${formatCurrency(totalExpenses)} expenses` : undefined },
           { label: 'We Owe Them',           value: weOweThem,          color: 'text-amber-600'  },
           { label: `Collected (${MONTHS[thisMonth - 1]})`, value: collectedThisMonth, color: 'text-emerald-600'},
           { label: `Paid Out (${MONTHS[thisMonth - 1]})`,  value: paidOutThisMonth,   color: 'text-rose-600'   },
+          { label: `Rides (${MONTHS[thisMonth - 1]})`,     value: brokerRides.reduce((s, r) => s + r.amount, 0), color: 'text-blue-600', sub: brokerRides.length > 0 ? `${brokerRides.length} rides` : undefined },
         ].map((c) => (
           <div key={c.label} className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-gray-200">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{c.label}</p>
@@ -642,6 +693,10 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                           </Link>
                         ) : (
                         <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => openAttachments(tx.id)}
+                            className={`relative ${(tx.attachments?.length ?? 0) > 0 ? 'text-indigo-600' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`}>
+                            📎{(tx.attachments?.length ?? 0) > 0 && <span className="ml-0.5 text-[10px]">{tx.attachments!.length}</span>}
+                          </Button>
                           {!isVoid && (
                             <Button size="sm" variant="ghost" onClick={() => openEditTx(tx)}
                               className="opacity-0 group-hover:opacity-100">Edit</Button>
@@ -973,6 +1028,58 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             <Button variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Button>
             <Button variant="primary" onClick={saveBroker} disabled={savingBroker}>
               {savingBroker ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Attachments Modal */}
+      <Modal open={showAttModal} onClose={() => setShowAttModal(false)} title={`Attachments${attTx ? ` — ${TYPE_LABELS[attTx.type] ?? attTx.type}` : ''}`}>
+        <div className="space-y-4">
+          {/* Existing attachments */}
+          {attTx && (attTx.attachments?.length ?? 0) > 0 ? (
+            <div className="space-y-2">
+              {attTx.attachments!.map(a => (
+                <div key={a.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-lg">📎</span>
+                    <div className="min-w-0">
+                      {a.label && <p className="text-xs font-semibold text-gray-700">{a.label}</p>}
+                      <p className="text-xs text-gray-500 truncate">{a.fileName}</p>
+                      <p className="text-[10px] text-gray-400">{formatFileSize(a.fileSize)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                    <a href={a.filePath} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-indigo-600 hover:underline font-medium">View</a>
+                    <button onClick={() => deleteAttachment(a.id)}
+                      className="text-xs text-red-500 hover:text-red-700">Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-2">No attachments yet</p>
+          )}
+
+          {/* Upload new */}
+          <div className="border-t border-gray-200 pt-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Upload Attachment</p>
+            <input
+              type="text" placeholder="Label (e.g. Receipt, Proof)" value={attLabel}
+              onChange={e => setAttLabel(e.target.value)}
+              className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+              onChange={e => setAttFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+            />
+            {attFile && <p className="text-xs text-gray-400">{attFile.name} · {formatFileSize(attFile.size)}</p>}
+            {attError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{attError}</p>}
+            <Button variant="primary" size="sm" onClick={uploadAttachment} disabled={savingAtt || !attFile}>
+              {savingAtt ? 'Uploading…' : 'Upload'}
             </Button>
           </div>
         </div>
