@@ -21,7 +21,7 @@ interface Transaction {
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
 interface BrokerExpense { id: string; cabNumber: string; date: string; amount: number; note: string; paid: boolean; }
 interface RecurringCharge { id: string; type: string; amount: number; description: string; dayOfMonth: number; isActive: boolean; }
-interface BrokerRide { id: string; vehicleNumber: string; dateTime: string; amount: number; passenger: string; company: { companyName: string }; }
+interface BrokerRide { id: string; vehicleNumber: string; dateTime: string; amount: number; passenger: string; pickupLocation: string; dropoffLocation: string; }
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
@@ -749,7 +749,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date/Time', 'Cab #', 'Passenger', 'Company', 'Amount'].map((h) => (
+                  {['Date', 'Cab #', 'Pickup', 'Drop Off', 'Amount'].map((h) => (
                     <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -759,8 +759,8 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                   <tr key={ride.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3.5 text-sm text-gray-500 whitespace-nowrap">{ride.dateTime || '—'}</td>
                     <td className="px-4 py-3.5 text-sm font-mono font-semibold text-gray-700">#{ride.vehicleNumber}</td>
-                    <td className="px-4 py-3.5 text-sm text-gray-600">{ride.passenger || '—'}</td>
-                    <td className="px-4 py-3.5 text-sm text-gray-500">{ride.company?.companyName || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600">{ride.pickupLocation || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600">{ride.dropoffLocation || '—'}</td>
                     <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(ride.amount)}</td>
                   </tr>
                 ))}

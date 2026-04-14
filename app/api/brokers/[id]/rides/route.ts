@@ -36,7 +36,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const rides = await prisma.ride.findMany({
       where,
       orderBy: { dateTime: 'desc' },
-      include: { company: { select: { companyName: true } } },
+      select: {
+        id: true, vehicleNumber: true, dateTime: true, amount: true,
+        passenger: true, pickupLocation: true, dropoffLocation: true,
+      },
     });
 
     return NextResponse.json(rides);
