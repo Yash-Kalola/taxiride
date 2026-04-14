@@ -92,6 +92,9 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [savingRC, setSavingRC] = useState(false);
   const [rcError, setRcError] = useState('');
   const [savingBroker,  setSavingBroker] = useState(false);
+  const [updatePendingRent, setUpdatePendingRent] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState('');
   const [txError,       setTxError]      = useState('');
   const [brokerError,   setBrokerError]  = useState('');
   const [filterMonth,   setFilterMonth]  = useState('');
@@ -294,20 +297,48 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   async function saveBroker() {
     setSavingBroker(true); setBrokerError('');
     try {
-      const payload = {
+      const newRate = parseFloat(brokerForm.standRentAmount) || 200;
+      const rateChanged = newRate !== broker.standRentAmount;
+      const payload: Record<string, unknown> = {
         name:            brokerForm.name.trim() || broker.name,
         phone:           brokerForm.phone.trim(),
         startDate:       brokerForm.startDate || undefined,
         billingDay:      parseInt(brokerForm.billingDay) || 1,
-        standRentAmount: parseFloat(brokerForm.standRentAmount) || 200,
+        standRentAmount: newRate,
       };
+      if (rateChanged && updatePendingRent) {
+        payload.updatePendingStandRent = true;
+      }
       const res  = await fetch(`/api/brokers/${broker.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) { setBrokerError(data.error ?? 'Failed'); return; }
       setBroker((prev) => ({ ...prev, ...data }));
-      setShowEdit(false);
+      // If pending rent was updated, refetch transactions
+      if (rateChanged && updatePendingRent) {
+        const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
+        if (fresh?.transactions) setTransactions(fresh.transactions);
+        if (fresh) setBroker(prev => ({ ...prev, ...fresh }));
+      }
+      setShowEdit(false); setUpdatePendingRent(false);
     } catch { setBrokerError('Network error'); }
     finally { setSavingBroker(false); }
+  }
+
+  async function backfillStandRent() {
+    setBackfilling(true); setBackfillMsg('');
+    try {
+      const res = await fetch(`/api/brokers/${broker.id}/backfill-standrent`, { method: 'POST' });
+      const data = await res.json();
+      setBackfillMsg(data.message || 'Done');
+      if (data.created > 0) {
+        // Refetch transactions
+        const fresh = await fetch(`/api/brokers/${broker.id}`).then(r => r.json());
+        if (fresh?.transactions) setTransactions(fresh.transactions);
+        if (fresh) setBroker(prev => ({ ...prev, ...fresh }));
+      }
+      setTimeout(() => setBackfillMsg(''), 5000);
+    } catch { setBackfillMsg('Network error'); }
+    finally { setBackfilling(false); }
   }
 
   async function toggleActive() {
@@ -434,24 +465,12 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         Brokers
       </Link>
 
-      {/* Broker info card */}
+      {/* Broker info card — grid layout */}
       <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-5">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight text-gray-900">{broker.name}</h1>
-              <Badge variant={broker.isActive ? 'active' : 'inactive'} />
-            </div>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-500">
-              {broker.phone && <span>📞 {broker.phone}</span>}
-              <span>Started: {broker.startDate ? format(new Date(broker.startDate), 'MMM d, yyyy') : '—'}</span>
-              {broker.endDate && <span>Ended: {format(new Date(broker.endDate), 'MMM d, yyyy')}</span>}
-              <span className={`inline-flex items-center gap-1 ${billingDue ? 'text-amber-600 font-medium' : ''}`}>
-                🗓 Billing: {ordinal(broker.billingDay)} of each month
-                {billingDue && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">Due</span>}
-              </span>
-              <span>💵 Stand rent: ${broker.standRentAmount}/cab/week</span>
-            </div>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">{broker.name}</h1>
+            <Badge variant={broker.isActive ? 'active' : 'inactive'} />
           </div>
           <div className="flex items-center gap-2">
             {autoGenerating && (
@@ -465,6 +484,33 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               {broker.isActive ? 'Deactivate' : 'Reactivate'}
             </Button>
           </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Phone</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{broker.phone || '—'}</p>
+          </div>
+          <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Start Date</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{broker.startDate ? format(new Date(broker.startDate), 'MMM d, yyyy') : '—'}</p>
+          </div>
+          <div className={`rounded-xl px-4 py-3 ring-1 ${billingDue ? 'bg-amber-50 ring-amber-200' : 'bg-gray-50 ring-gray-100'}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Billing Day</p>
+            <p className={`mt-1 text-sm font-medium ${billingDue ? 'text-amber-700' : 'text-gray-900'}`}>
+              {ordinal(broker.billingDay)} of each month
+              {billingDue && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Due</span>}
+            </p>
+          </div>
+          <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Stand Rent</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">${broker.standRentAmount}/cab/week</p>
+          </div>
+          {broker.endDate && (
+            <div className="rounded-xl bg-red-50 px-4 py-3 ring-1 ring-red-100">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-red-400">End Date</p>
+              <p className="mt-1 text-sm font-medium text-red-700">{format(new Date(broker.endDate), 'MMM d, yyyy')}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -543,15 +589,12 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>
           </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/expenses?broker=${broker.id}`}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors"
-            >
-              + Add Expense
-            </Link>
-            <Button variant="primary" onClick={openAddTx}>+ Add Transaction</Button>
-          </div>
+          <Link
+            href={`/expenses?broker=${broker.id}`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+          >
+            + Add Expense
+          </Link>
         </div>
 
         {displayed.length === 0 ? (
@@ -876,6 +919,17 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                 className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-400">Late fee: +$30/vehicle per unpaid week</p>
+              {parseFloat(brokerForm.standRentAmount) !== broker.standRentAmount && (
+                <label className="mt-2 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={updatePendingRent}
+                    onChange={(e) => setUpdatePendingRent(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs text-indigo-600 font-medium">Update all pending stand rent with new rate</span>
+                </label>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -893,6 +947,25 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                 </p>
               )}
             </div>
+          </div>
+
+          {/* Backfill stand rent */}
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Backfill Stand Rent</p>
+                <p className="text-xs text-gray-400">Generate missing stand rent for all months this year</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={backfillStandRent} disabled={backfilling}
+                className="text-indigo-600 hover:bg-indigo-50">
+                {backfilling ? 'Generating…' : 'Backfill'}
+              </Button>
+            </div>
+            {backfillMsg && (
+              <p className={`mt-2 text-xs font-medium ${backfillMsg.startsWith('Backfilled') ? 'text-emerald-600' : 'text-gray-500'}`}>
+                {backfillMsg}
+              </p>
+            )}
           </div>
 
           {brokerError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{brokerError}</p>}

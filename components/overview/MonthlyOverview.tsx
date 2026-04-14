@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import Select from '@/components/ui/Select';
 import PageHeader from '@/components/ui/PageHeader';
@@ -18,6 +18,8 @@ interface InvoiceRow {
   company: { id: string; companyName: string };
 }
 
+type ActionMenu = { inv: InvoiceRow; x: number; y: number } | null;
+
 export default function MonthlyOverview({
   invoices,
   companies: allCompanies,
@@ -32,11 +34,32 @@ export default function MonthlyOverview({
   }, [invoices]);
 
   const [year, setYear] = useState<number>(availableYears[0]);
+  const [invoiceData, setInvoiceData] = useState<InvoiceRow[]>(invoices);
+  const [actionMenu, setActionMenu] = useState<ActionMenu>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setActionMenu(null);
+    }
+    if (actionMenu) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [actionMenu]);
+
+  async function patchInvoice(id: string, data: Record<string, unknown>) {
+    const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (res.ok) {
+      const updated = await res.json();
+      setInvoiceData(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
+    }
+    setActionMenu(null);
+  }
 
   // Filter to selected year
   const yearInvoices = useMemo(
-    () => invoices.filter((i) => i.year === year),
-    [invoices, year]
+    () => invoiceData.filter((i) => i.year === year),
+    [invoiceData, year]
   );
 
   // Months that have at least one invoice in this year (in calendar order)
@@ -167,11 +190,17 @@ export default function MonthlyOverview({
                       return (
                         <td
                           key={m}
-                          className={`px-4 py-3.5 text-center transition-colors ${
+                          className={`px-4 py-3.5 text-center transition-colors relative ${
                             isFlagged ? 'bg-red-50' : ''
                           }`}
                         >
-                          <Link href={`/invoices/${inv.id}`} className="group/cell block">
+                          <button
+                            onClick={(e) => {
+                              const rect = (e.target as HTMLElement).getBoundingClientRect();
+                              setActionMenu({ inv, x: rect.left, y: rect.bottom + 4 });
+                            }}
+                            className="group/cell block w-full text-center cursor-pointer"
+                          >
                             <span className={`block text-sm font-semibold tabular-nums ${
                               isFlagged ? 'text-red-700' : isPaid ? 'text-emerald-700' : 'text-gray-900'
                             } group-hover/cell:underline`}>
@@ -179,7 +208,7 @@ export default function MonthlyOverview({
                             </span>
                             {isFlagged && (
                               <span className="mt-0.5 block text-[10px] font-medium text-red-500">
-                                ▼ dropped
+                                ▼ flagged
                               </span>
                             )}
                             {isPaid && !isFlagged && (
@@ -197,7 +226,7 @@ export default function MonthlyOverview({
                                 draft
                               </span>
                             )}
-                          </Link>
+                          </button>
                         </td>
                       );
                     })}
@@ -256,6 +285,49 @@ export default function MonthlyOverview({
           No invoice this month
         </span>
       </div>
+
+      {/* Action menu popup */}
+      {actionMenu && (
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', left: actionMenu.x, top: actionMenu.y, zIndex: 50 }}
+          className="min-w-[180px] rounded-xl bg-white shadow-lg ring-1 ring-gray-200 py-1.5 text-sm"
+        >
+          <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            #{actionMenu.inv.invoiceNumber} · {actionMenu.inv.month}
+          </div>
+          <hr className="my-1 border-gray-100" />
+          {actionMenu.inv.flagged && !actionMenu.inv.verified && (
+            <button onClick={() => patchInvoice(actionMenu.inv.id, { flagged: false, verified: true })}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50 text-gray-700 flex items-center gap-2">
+              <span className="text-emerald-500">✓</span> Unflag Invoice
+            </button>
+          )}
+          {actionMenu.inv.status !== 'PAID' && (
+            <button onClick={() => patchInvoice(actionMenu.inv.id, { status: 'PAID' })}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50 text-emerald-700 flex items-center gap-2">
+              <span>💰</span> Mark as Paid
+            </button>
+          )}
+          {actionMenu.inv.status === 'PAID' && (
+            <button onClick={() => patchInvoice(actionMenu.inv.id, { status: 'PENDING' })}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50 text-amber-700 flex items-center gap-2">
+              <span>↩</span> Mark as Pending
+            </button>
+          )}
+          {actionMenu.inv.status === 'DRAFT' && (
+            <button onClick={() => patchInvoice(actionMenu.inv.id, { status: 'PENDING' })}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50 text-indigo-700 flex items-center gap-2">
+              <span>📤</span> Send (Mark Pending)
+            </button>
+          )}
+          <hr className="my-1 border-gray-100" />
+          <Link href={`/invoices/${actionMenu.inv.id}`} onClick={() => setActionMenu(null)}
+            className="block w-full px-3 py-2 text-left hover:bg-gray-50 text-indigo-600 font-medium">
+            View Invoice →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

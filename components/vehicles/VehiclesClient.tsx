@@ -279,7 +279,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Cab #', 'Type', 'Assigned Broker', 'Insurance / mo', 'Status', ''].map((h) => (
+                  {['Cab #', 'Ownership', 'Assigned Broker', 'Status', ''].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -295,7 +295,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                             ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-600/20'
                             : 'bg-gray-100 text-gray-600 ring-1 ring-gray-400/20'
                         }`}>
-                          {v.isCompanyCar ? 'Company Car' : "Broker's Car"}
+                          {v.isCompanyCar ? 'Owned by Company' : 'Owned by Broker'}
                         </span>
                       </td>
                       <td className="px-5 py-4 text-sm text-gray-700">
@@ -303,9 +303,6 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                           ? <Link href={`/brokers/${v.broker.id}`} className="font-medium text-indigo-600 hover:text-indigo-800">{v.broker.name}</Link>
                           : <span className="text-gray-400">— Unassigned —</span>
                         }
-                      </td>
-                      <td className="px-5 py-4 text-sm text-gray-700">
-                        {v.isCompanyCar && v.insuranceAmount > 0 ? formatCurrency(v.insuranceAmount) : <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-5 py-4">
                         <Badge variant={v.isActive ? 'active' : 'inactive'} />
@@ -343,7 +340,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                     {/* Documents sub-row (all vehicles) */}
                     {expandedDocs.has(v.id) && (
                       <tr key={`${v.id}-docs`}>
-                        <td colSpan={6} className="bg-indigo-50 px-5 py-3">
+                        <td colSpan={5} className="bg-indigo-50 px-5 py-3">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Documents — Cab #{v.cabNumber}</p>
                             <Button size="sm" variant="ghost" onClick={() => openAddDoc(v)}
@@ -381,7 +378,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                     {/* Accident sub-rows for company cars */}
                     {v.isCompanyCar && expandedAccidents.has(v.id) && (
                       <tr key={`${v.id}-accidents`}>
-                        <td colSpan={6} className="bg-red-50 px-5 py-3">
+                        <td colSpan={5} className="bg-red-50 px-5 py-3">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-bold uppercase tracking-widest text-red-400">Accident / Claim Records — Cab #{v.cabNumber}</p>
                             <Button size="sm" variant="ghost" onClick={() => openAddAccident(v)}
@@ -448,13 +445,13 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
             onChange={(e) => setForm((f) => ({ ...f, cabNumber: e.target.value }))}
           />
 
-          {/* Type selector */}
+          {/* Ownership selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Ownership</label>
             <div className="flex gap-3">
               {[
-                { value: false, label: "Broker's Car",  desc: 'Owned by the broker' },
-                { value: true,  label: 'Company Car',   desc: 'Company-owned, subleased to broker' },
+                { value: false, label: "Broker Car",  desc: 'Owned by Broker' },
+                { value: true,  label: 'Company Car',   desc: 'Owned by Company' },
               ].map((opt) => (
                 <button
                   key={String(opt.value)}
@@ -471,6 +468,11 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                 </button>
               ))}
             </div>
+            <p className="mt-2 text-xs text-gray-400">
+              {form.isCompanyCar
+                ? 'Company car — use Recurring Payments to manage insurance charges.'
+                : 'Broker car — broker is responsible for insurance.'}
+            </p>
           </div>
 
           <Select
@@ -481,18 +483,6 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
             <option value="">— Unassigned —</option>
             {brokers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>
-
-          {form.isCompanyCar && (
-            <Input
-              label="Insurance Amount ($/month)"
-              type="number"
-              min={0}
-              step={0.01}
-              placeholder="0.00"
-              value={form.insuranceAmount}
-              onChange={(e) => setForm((f) => ({ ...f, insuranceAmount: e.target.value }))}
-            />
-          )}
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
