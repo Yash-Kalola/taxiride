@@ -222,3 +222,103 @@ model ExpenseAttachment {
   fileSize  Int          @default(0)
   createdAt DateTime     @default(now())
 }
+
+// ──────────────────────────────────────────────────────────────
+// Phase 3: Driver Management & Daily Sheets
+// ──────────────────────────────────────────────────────────────
+
+enum Shift {
+  MORNING   // 5am – 5pm
+  EVENING   // 5pm – 5am
+}
+
+enum PayoutStatus {
+  DRAFT
+  PAID
+}
+
+model Driver {
+  id            String              @id @default(cuid())
+  name          String
+  phone         String              @default("")
+  licenseNumber String              @default("")
+  isActive      Boolean             @default(true)
+  startDate     DateTime
+  endDate       DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  assignments   VehicleAssignment[]
+  dailySheets   DailySheet[]
+  payouts       DriverPayout[]
+}
+
+// A driver–vehicle–shift assignment. Only one active per (vehicle, shift) at a time.
+// Past assignments are kept for history (isActive=false, endDate set).
+model VehicleAssignment {
+  id            String    @id @default(cuid())
+  vehicleNumber String                                   // cab # e.g. "30" — matches BrokerVehicle.cabNumber / Ride.vehicleNumber
+  driverId      String
+  driver        Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  shift         Shift
+  startDate     DateTime
+  endDate       DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([vehicleNumber, shift, isActive])
+  @@index([driverId, isActive])
+}
+
+model DailySheet {
+  id                    String    @id @default(cuid())
+  driverId              String
+  driver                Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleNumber         String
+  date                  DateTime
+  shift                 Shift
+  grossEarnings         Float     @default(0)
+  gasDeduction          Float     @default(0)
+  debitFee              Float     @default(0)   // per-transaction fee
+  debitTransactionCount Int       @default(0)
+  callChargeDeduction   Float     @default(0)
+  extraExpenseDeduction Float     @default(0)
+  extraExpenseNote      String    @default("")
+  hoursWorked           Float     @default(0)
+  netDriverPay          Float     @default(0)   // stored: (gross×0.60) − gas − (debitFee×count) − call − extra
+  payoutPeriod          Int                     // 1 (1–10), 2 (11–20), 3 (21–end) — derived from date
+  month                 Int
+  year                  Int
+  isPaid                Boolean   @default(false)
+  paidDate              DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([driverId, month, year])
+  @@index([driverId, payoutPeriod, month, year])
+  @@index([date])
+  @@index([vehicleNumber, date])
+}
+
+model DriverPayout {
+  id              String       @id @default(cuid())
+  driverId        String
+  driver          Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  periodStart     DateTime
+  periodEnd       DateTime
+  payoutPeriod    Int          // 1, 2, or 3
+  month           Int
+  year            Int
+  totalGross      Float        @default(0)
+  totalDeductions Float        @default(0)
+  totalNetPay     Float        @default(0)
+  status          PayoutStatus @default(DRAFT)
+  paidDate        DateTime?
+  notes           String       @default("")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([driverId, payoutPeriod, month, year])
+  @@index([month, year, payoutPeriod])
+  @@index([status])
+}

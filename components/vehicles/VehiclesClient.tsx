@@ -27,6 +27,9 @@ interface Vehicle {
   documents: VehicleDoc[];
 }
 interface Broker { id: string; name: string; }
+interface Driver { id: string; name: string; }
+interface DriverRef { assignmentId: string; driverId: string; driverName: string; }
+interface AssignmentRow { cabNumber: string; morning: DriverRef | null; evening: DriverRef | null; }
 
 type Filter = 'all' | 'broker' | 'company';
 type ModalMode = 'add' | 'edit' | null;
@@ -34,14 +37,31 @@ type ModalMode = 'add' | 'edit' | null;
 const EMPTY_FORM      = { cabNumber: '', brokerId: '', isCompanyCar: false, insuranceAmount: '0' };
 const EMPTY_ACCIDENT  = { date: new Date().toISOString().split('T')[0], incidentNumber: '', claimNumber: '', driver: '', settlementAmount: '', notes: '' };
 
-export default function VehiclesClient({ initialVehicles, brokers }: { initialVehicles: Vehicle[]; brokers: Broker[] }) {
+export default function VehiclesClient({
+  initialVehicles, brokers, drivers, initialAssignments,
+}: {
+  initialVehicles: Vehicle[]; brokers: Broker[]; drivers: Driver[]; initialAssignments: AssignmentRow[];
+}) {
   const [vehicles,       setVehicles]      = useState<Vehicle[]>(initialVehicles);
+  const [assignments,    setAssignments]   = useState<AssignmentRow[]>(initialAssignments);
   const [modal,          setModal]         = useState<ModalMode>(null);
   const [editing,        setEditing]       = useState<Vehicle | null>(null);
   const [form,           setForm]          = useState(EMPTY_FORM);
   const [saving,         setSaving]        = useState(false);
   const [error,          setError]         = useState('');
   const [filter,         setFilter]        = useState<Filter>('all');
+  // Driver assignment modal
+  const [assignVehicle,  setAssignVehicle] = useState<Vehicle | null>(null);
+  const [assignShift,    setAssignShift]   = useState<'MORNING' | 'EVENING'>('MORNING');
+  const [assignDriverId, setAssignDriverId] = useState<string>('');
+  const [assignSaving,   setAssignSaving]  = useState(false);
+  const [assignError,    setAssignError]   = useState('');
+
+  const assignmentByCab = useMemo(() => {
+    const m = new Map<string, AssignmentRow>();
+    for (const a of assignments) m.set(a.cabNumber, a);
+    return m;
+  }, [assignments]);
   // Accident tracking
   const [accidentVehicle,  setAccidentVehicle]  = useState<Vehicle | null>(null);
   const [accidentModal,    setAccidentModal]    = useState<'add' | 'edit' | null>(null);
@@ -237,6 +257,48 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
     }
   }
 
+  // --- Driver assignment helpers ---
+  function openAssign(v: Vehicle, shift: 'MORNING' | 'EVENING') {
+    setAssignVehicle(v); setAssignShift(shift);
+    // Pre-fill current driver if any
+    const row = assignmentByCab.get(v.cabNumber);
+    const current = shift === 'MORNING' ? row?.morning : row?.evening;
+    setAssignDriverId(current?.driverId ?? '');
+    setAssignError('');
+  }
+
+  async function refreshAssignments() {
+    try {
+      const res = await fetch('/api/vehicle-assignments/summary');
+      if (!res.ok) return;
+      const data = await res.json();
+      // Keep only rows for known cabs we're showing
+      const known = new Set(vehicles.map((v) => v.cabNumber));
+      setAssignments((data.rows ?? []).filter((r: AssignmentRow) => known.has(r.cabNumber)));
+    } catch {}
+  }
+
+  async function saveAssignment() {
+    if (!assignVehicle) return;
+    setAssignSaving(true); setAssignError('');
+    try {
+      const res = await fetch('/api/vehicle-assignments', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          vehicleNumber: assignVehicle.cabNumber,
+          shift:         assignShift,
+          driverId:      assignDriverId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAssignError(typeof data.error === 'string' ? data.error : 'Failed to save'); return; }
+      await refreshAssignments();
+      setAssignVehicle(null);
+    } catch { setAssignError('Network error'); }
+    finally { setAssignSaving(false); }
+  }
+
   function formatFileSize(bytes: number): string {
     if (bytes < 1024)       return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -291,7 +353,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Cab #', 'Ownership', 'Assigned Broker', 'Status', ''].map((h) => (
+                  {['Cab #', 'Morning Driver', 'Evening Driver', 'Ownership', 'Assigned Broker', 'Status', ''].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -301,6 +363,20 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                   <>
                     <tr key={v.id} className="group hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-4 font-mono text-sm font-bold text-gray-900">#{v.cabNumber}</td>
+                      <td className="px-5 py-4">
+                        <DriverCell
+                          shift="MORNING"
+                          assignment={assignmentByCab.get(v.cabNumber)?.morning ?? null}
+                          onAssign={() => openAssign(v, 'MORNING')}
+                        />
+                      </td>
+                      <td className="px-5 py-4">
+                        <DriverCell
+                          shift="EVENING"
+                          assignment={assignmentByCab.get(v.cabNumber)?.evening ?? null}
+                          onAssign={() => openAssign(v, 'EVENING')}
+                        />
+                      </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           v.isCompanyCar
@@ -352,7 +428,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                     {/* Documents sub-row (all vehicles) */}
                     {expandedDocs.has(v.id) && (
                       <tr key={`${v.id}-docs`}>
-                        <td colSpan={5} className="bg-indigo-50 px-5 py-3">
+                        <td colSpan={7} className="bg-indigo-50 px-5 py-3">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Documents — Cab #{v.cabNumber}</p>
                             <Button size="sm" variant="ghost" onClick={() => openAddDoc(v)}
@@ -390,7 +466,7 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
                     {/* Accident sub-rows for company cars */}
                     {v.isCompanyCar && expandedAccidents.has(v.id) && (
                       <tr key={`${v.id}-accidents`}>
-                        <td colSpan={5} className="bg-red-50 px-5 py-3">
+                        <td colSpan={7} className="bg-red-50 px-5 py-3">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-bold uppercase tracking-widest text-red-400">Accident / Claim Records — Cab #{v.cabNumber}</p>
                             <Button size="sm" variant="ghost" onClick={() => openAddAccident(v)}
@@ -570,6 +646,61 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
         </div>
       </Modal>
 
+      {/* Assign Driver Modal */}
+      <Modal
+        open={assignVehicle !== null}
+        onClose={() => setAssignVehicle(null)}
+        title={`Assign ${assignShift === 'MORNING' ? 'Morning' : 'Evening'} Driver — Cab #${assignVehicle?.cabNumber}`}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Shift</label>
+            <div className="flex gap-2">
+              {(['MORNING', 'EVENING'] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    setAssignShift(s);
+                    if (assignVehicle) {
+                      const row = assignmentByCab.get(assignVehicle.cabNumber);
+                      const current = s === 'MORNING' ? row?.morning : row?.evening;
+                      setAssignDriverId(current?.driverId ?? '');
+                    }
+                  }}
+                  className={`flex-1 rounded-xl border-2 p-3 text-center transition-colors ${
+                    assignShift === s
+                      ? s === 'MORNING'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <p className="text-sm font-semibold">{s === 'MORNING' ? 'Morning' : 'Evening'}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Select label="Driver" value={assignDriverId} onChange={(e) => setAssignDriverId(e.target.value)}>
+            <option value="">— Unassign (no driver) —</option>
+            {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </Select>
+
+          <p className="text-xs text-gray-400">
+            Assigning here will automatically end any current active assignment for this cab/shift — and for the selected driver, if they&apos;re already on another cab.
+          </p>
+
+          {assignError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{assignError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setAssignVehicle(null)}>Cancel</Button>
+            <Button variant="primary" onClick={saveAssignment} disabled={assignSaving}>
+              {assignSaving ? 'Saving…' : assignDriverId ? 'Assign Driver' : 'Unassign'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Upload Document Modal */}
       <Modal open={showDocModal} onClose={() => setShowDocModal(false)} title={`Upload Document — Cab #${docVehicle?.cabNumber}`}>
         <div className="space-y-4">
@@ -602,5 +733,41 @@ export default function VehiclesClient({ initialVehicles, brokers }: { initialVe
         </div>
       </Modal>
     </>
+  );
+}
+
+function DriverCell({ shift, assignment, onAssign }: {
+  shift: 'MORNING' | 'EVENING';
+  assignment: DriverRef | null;
+  onAssign: () => void;
+}) {
+  const chipClass = shift === 'MORNING'
+    ? 'bg-blue-50 text-blue-700 ring-blue-600/20 hover:bg-blue-100'
+    : 'bg-purple-50 text-purple-700 ring-purple-600/20 hover:bg-purple-100';
+  if (!assignment) {
+    return (
+      <button
+        onClick={onAssign}
+        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-400 ring-1 ring-dashed ring-gray-300 hover:ring-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+      >
+        + Assign
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Link
+        href={`/drivers/${assignment.driverId}`}
+        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 transition-colors ${chipClass}`}
+      >
+        {assignment.driverName}
+      </Link>
+      <button
+        onClick={onAssign}
+        className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-indigo-500 hover:text-indigo-700"
+      >
+        Change
+      </button>
+    </div>
   );
 }
