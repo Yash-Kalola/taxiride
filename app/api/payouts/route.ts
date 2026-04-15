@@ -39,7 +39,8 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json(payouts);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(payout, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

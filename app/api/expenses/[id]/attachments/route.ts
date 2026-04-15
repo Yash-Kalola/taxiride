@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import path from 'path';
-import fs from 'fs';
+import { validateUpload, saveUpload } from '@/lib/uploads';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -12,35 +11,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const file  = formData.get('file') as File | null;
     const label = (formData.get('label') as string) || '';
 
-    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    const err = validateUpload(file);
+    if (err) return NextResponse.json({ error: err.message }, { status: err.status });
 
-    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-    if (file.size > MAX_SIZE) return NextResponse.json({ error: 'File too large. Maximum size is 10 MB.' }, { status: 413 });
-
-    // Save to disk
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'expenses', params.id);
-    fs.mkdirSync(uploadDir, { recursive: true });
-
-    const ext      = path.extname(file.name);
-    const safeName = `${Date.now()}${ext}`;
-    const fullPath = path.join(uploadDir, safeName);
-    fs.writeFileSync(fullPath, Buffer.from(await file.arrayBuffer()));
-
-    const relPath = `/uploads/expenses/${params.id}/${safeName}`;
+    const { relPath } = await saveUpload(file!, 'expenses', params.id);
 
     const attachment = await prisma.expenseAttachment.create({
       data: {
         expenseId: params.id,
         label,
-        fileName:  file.name,
+        fileName:  file!.name,
         filePath:  relPath,
-        fileType:  file.type,
-        fileSize:  file.size,
+        fileType:  file!.type,
+        fileSize:  file!.size,
       },
     });
 
     return NextResponse.json(attachment, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error('expense attachment upload failed:', err);
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }

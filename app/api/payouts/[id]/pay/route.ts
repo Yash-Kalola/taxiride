@@ -47,6 +47,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json(updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

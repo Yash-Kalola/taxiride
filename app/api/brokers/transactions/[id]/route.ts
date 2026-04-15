@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const updateSchema = z.object({
   type:        z.enum(['STAND_RENT', 'COMPANY_PAYMENT', 'PRODUCT_CHARGE', 'INSURANCE', 'PAYOUT', 'OTHER']).optional(),
@@ -17,16 +18,24 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  let parsedDue: Date | undefined;
+  if (parsed.data.dueDate) {
+    const d = parseLocalDate(parsed.data.dueDate);
+    if (!d) return NextResponse.json({ error: 'Invalid due date' }, { status: 400 });
+    parsedDue = d;
+  }
+
   try {
     const data: Record<string, unknown> = { ...parsed.data };
-    if (parsed.data.dueDate) data.dueDate = new Date(parsed.data.dueDate);
+    if (parsedDue) data.dueDate = parsedDue;
     if (parsed.data.dueDate === null) data.dueDate = null;
 
     const tx = await prisma.brokerTransaction.update({ where: { id: params.id }, data });
     return NextResponse.json(tx);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -36,6 +45,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

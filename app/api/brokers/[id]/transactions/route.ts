@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
   type:        z.enum(['STAND_RENT', 'COMPANY_PAYMENT', 'PRODUCT_CHARGE', 'INSURANCE', 'PAYOUT', 'OTHER']),
@@ -19,7 +20,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     });
     return NextResponse.json(transactions);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -27,6 +29,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const body = await request.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+
+  let dueDate: Date | null = null;
+  if (parsed.data.dueDate) {
+    const d = parseLocalDate(parsed.data.dueDate);
+    if (!d) return NextResponse.json({ error: 'Invalid due date' }, { status: 400 });
+    dueDate = d;
+  }
 
   try {
     const broker = await prisma.broker.findUnique({ where: { id: params.id } });
@@ -38,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         type:        parsed.data.type,
         amount:      parsed.data.amount,
         description: parsed.data.description,
-        dueDate:     parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+        dueDate,
         month:       parsed.data.month,
         year:        parsed.data.year,
         status:      'PENDING',
@@ -46,6 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

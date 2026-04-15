@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ generated: payouts.length, payouts });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

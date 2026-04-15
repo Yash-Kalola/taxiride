@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
   vehicleNumber: z.string().min(1),
@@ -19,7 +20,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const { vehicleNumber, shift, startDate } = parsed.data;
-  const start = new Date(startDate);
+  const start = parseLocalDate(startDate);
+  if (!start) return NextResponse.json({ error: 'Invalid start date' }, { status: 400 });
 
   try {
     // Verify driver exists + is active
@@ -54,7 +56,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     return NextResponse.json(assignment, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -66,6 +69,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     });
     return NextResponse.json(assignments);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

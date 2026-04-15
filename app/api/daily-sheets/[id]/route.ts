@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
+import { parseLocalDate } from '@/lib/dates';
 
 const updateSchema = z.object({
   vehicleNumber:         z.string().min(1).optional(),
@@ -27,7 +28,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     if (!sheet) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(sheet);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -49,8 +51,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       .some((k) => (f as any)[k] !== undefined);
 
     if (dateChanged) {
-      const newDate = new Date(f.date!);
-      if (isNaN(newDate.getTime())) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
+      const newDate = parseLocalDate(f.date!);
+      if (!newDate) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
       data.date         = newDate;
       data.month        = newDate.getMonth() + 1;
       data.year         = newDate.getFullYear();
@@ -78,7 +80,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json(updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    if (err?.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Another sheet already exists for this driver, date and shift.' },
+        { status: 409 }
+      );
+    }
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -88,6 +97,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

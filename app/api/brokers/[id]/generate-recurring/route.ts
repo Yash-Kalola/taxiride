@@ -13,9 +13,14 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     const month = now.getMonth() + 1;
     const year  = now.getFullYear();
 
-    const charges = await prisma.recurringCharge.findMany({
-      where: { brokerId: params.id, isActive: true, dayOfMonth: { lte: today } },
+    const allActive = await prisma.recurringCharge.findMany({
+      where: { brokerId: params.id, isActive: true },
     });
+
+    // A charge with dayOfMonth=31 should trigger on the last day of shorter months.
+    // Compare the clamped day (min of dayOfMonth, last-day-of-month) against today.
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const charges = allActive.filter(rc => Math.min(rc.dayOfMonth, lastDayOfMonth) <= today);
 
     const created: any[] = [];
     for (const rc of charges) {
@@ -31,7 +36,10 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       });
       if (existing) continue;
 
-      const dueDate = new Date(year, month - 1, rc.dayOfMonth);
+      // Clamp dayOfMonth to the last valid day of this month so e.g. 31 in Feb
+      // doesn't roll forward into March via the Date constructor.
+      const safeDay = Math.min(rc.dayOfMonth, lastDayOfMonth);
+      const dueDate = new Date(year, month - 1, safeDay);
       const tx = await prisma.brokerTransaction.create({
         data: {
           brokerId:    params.id,
@@ -49,7 +57,8 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
 
     return NextResponse.json({ created, count: created.length }, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error('generate-recurring failed:', err);
+    return NextResponse.json({ error: 'Failed to generate recurring charges' }, { status: 500 });
   }
 }
 

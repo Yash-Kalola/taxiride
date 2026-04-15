@@ -81,14 +81,37 @@ export default function PayoutsClient({
     const drafts = payouts.filter((p) => p.status === 'DRAFT');
     if (drafts.length === 0) { alert('No DRAFT payouts in current filter'); return; }
     if (!confirm(`Mark ${drafts.length} draft payout${drafts.length !== 1 ? 's' : ''} as PAID? This also marks their daily sheets as paid.`)) return;
+
+    // Collect per-driver failures so one bad row doesn't silently skip the
+    // rest of the batch — surface the list to the user.
+    const failures: string[] = [];
     for (const p of drafts) {
-      await fetch(`/api/payouts/${p.id}/pay`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ status: 'PAID' }),
-      });
+      try {
+        const res = await fetch(`/api/payouts/${p.id}/pay`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ status: 'PAID' }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({} as any));
+          failures.push(`${p.driver?.name ?? p.driverId}: ${body?.error ?? `HTTP ${res.status}`}`);
+        }
+      } catch (err: any) {
+        failures.push(`${p.driver?.name ?? p.driverId}: ${err?.message ?? 'network error'}`);
+      }
     }
+
     await refresh();
+
+    if (failures.length > 0) {
+      const paidCount = drafts.length - failures.length;
+      alert(
+        `Marked ${paidCount} of ${drafts.length} paid.\n\n` +
+        `Failed (${failures.length}):\n` +
+        failures.slice(0, 10).join('\n') +
+        (failures.length > 10 ? `\n…and ${failures.length - 10} more` : '')
+      );
+    }
   }
 
   function downloadAllPDF() {

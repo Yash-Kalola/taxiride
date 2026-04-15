@@ -20,7 +20,8 @@ export async function GET() {
     });
     return NextResponse.json(companies);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(company, { status: 201 });
   } catch (err: any) {
     if (err?.code === 'P2002') return NextResponse.json({ error: 'Account ID already exists' }, { status: 409 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

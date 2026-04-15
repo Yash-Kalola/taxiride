@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
   name:          z.string().min(1),
@@ -22,7 +23,8 @@ export async function GET() {
     });
     return NextResponse.json(drivers);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -31,18 +33,22 @@ export async function POST(request: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const startDate = parseLocalDate(parsed.data.startDate);
+  if (!startDate) return NextResponse.json({ error: 'Invalid start date' }, { status: 400 });
+
   try {
     const driver = await prisma.driver.create({
       data: {
         name:          parsed.data.name,
         phone:         parsed.data.phone,
         licenseNumber: parsed.data.licenseNumber,
-        startDate:     new Date(parsed.data.startDate),
+        startDate,
         isActive:      true,
       },
     });
     return NextResponse.json(driver, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
+import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
   vehicleNumber:         z.string().min(1),
@@ -33,7 +34,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     });
     return NextResponse.json(sheets);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -43,8 +45,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const d = parsed.data;
-  const date = new Date(d.date);
-  if (isNaN(date.getTime())) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
+  const date = parseLocalDate(d.date);
+  if (!date) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
 
   const breakdown = computePayBreakdown({
     grossEarnings:         d.grossEarnings,
@@ -81,7 +83,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       },
     });
     return NextResponse.json(sheet, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'A daily sheet for this driver, date and shift already exists.' },
+        { status: 409 }
+      );
+    }
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

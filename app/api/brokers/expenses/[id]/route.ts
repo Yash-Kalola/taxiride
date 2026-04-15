@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 import path from 'path';
 import fs from 'fs';
 
@@ -17,9 +18,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const parsed = putSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  if (parsed.data.date) {
+    const d = parseLocalDate(parsed.data.date);
+    if (!d) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
+  }
+
   try {
     const data: Record<string, unknown> = { ...parsed.data };
-    if (parsed.data.date) data.date = new Date(parsed.data.date);
+    if (parsed.data.date) data.date = parseLocalDate(parsed.data.date)!;
 
     const updated = await prisma.brokerExpense.update({
       where: { id: params.id },
@@ -32,7 +38,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json(updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -51,6 +58,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

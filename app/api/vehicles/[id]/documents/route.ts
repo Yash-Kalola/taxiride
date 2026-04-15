@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import path from 'path';
-import fs from 'fs';
+import { validateUpload, saveUpload } from '@/lib/uploads';
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -11,7 +10,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     });
     return NextResponse.json(docs);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error('list vehicle documents failed:', err);
+    return NextResponse.json({ error: 'Failed to load documents' }, { status: 500 });
   }
 }
 
@@ -24,37 +24,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const file  = formData.get('file') as File | null;
     const label = (formData.get('label') as string) || '';
 
-    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    const err = validateUpload(file);
+    if (err) return NextResponse.json({ error: err.message }, { status: err.status });
 
-    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-    if (file.size > MAX_SIZE) return NextResponse.json({ error: 'File too large. Maximum size is 10 MB.' }, { status: 413 });
-
-    // Create upload directory
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'vehicles', params.id);
-    fs.mkdirSync(uploadDir, { recursive: true });
-
-    // Use timestamp prefix to avoid filename collisions
-    const ext      = path.extname(file.name);
-    const safeName = `${Date.now()}${ext}`;
-    const fullPath = path.join(uploadDir, safeName);
-    const buffer   = Buffer.from(await file.arrayBuffer());
-    fs.writeFileSync(fullPath, buffer);
-
-    const relPath = `/uploads/vehicles/${params.id}/${safeName}`;
+    const { relPath } = await saveUpload(file!, 'vehicles', params.id);
 
     const doc = await prisma.vehicleDocument.create({
       data: {
         vehicleId: params.id,
         label,
-        fileName: file.name,
+        fileName: file!.name,
         filePath: relPath,
-        fileType: file.type,
-        fileSize: file.size,
+        fileType: file!.type,
+        fileSize: file!.size,
       },
     });
 
     return NextResponse.json(doc, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error('vehicle document upload failed:', err);
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }

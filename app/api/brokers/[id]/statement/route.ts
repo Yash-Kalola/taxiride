@@ -84,6 +84,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 });
+    console.error(err);
+    return new Response(JSON.stringify({ error: 'Server error' }), { status: 500 });
   }
 }

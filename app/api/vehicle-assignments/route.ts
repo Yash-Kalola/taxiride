@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 /**
  * POST /api/vehicle-assignments
@@ -24,7 +25,14 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const { vehicleNumber, shift, driverId, startDate } = parsed.data;
-  const start = startDate ? new Date(startDate) : new Date();
+  let start: Date;
+  if (startDate) {
+    const d = parseLocalDate(startDate);
+    if (!d) return NextResponse.json({ error: 'Invalid start date' }, { status: 400 });
+    start = d;
+  } else {
+    start = new Date();
+  }
   const endDate = new Date(start.getTime() - 1);
 
   try {
@@ -55,9 +63,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result ?? { unassigned: true }, { status: 201 });
   } catch (err: any) {
-    const msg = err?.message ?? String(err);
-    const status = msg.startsWith('Driver not found') || msg.startsWith('Cannot assign') ? 400 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    const msg: string = typeof err?.message === 'string' ? err.message : '';
+    // Known business-rule errors thrown from the txn — safe to surface.
+    if (msg.startsWith('Driver not found') || msg.startsWith('Cannot assign')) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -75,6 +87,7 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json(history);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

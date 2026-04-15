@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
   date:            z.string().min(1),
@@ -19,7 +20,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     });
     return NextResponse.json(accidents);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -28,11 +30,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const date = parseLocalDate(parsed.data.date);
+  if (!date) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
+
   try {
     const accident = await prisma.vehicleAccident.create({
       data: {
         vehicleId:       params.id,
-        date:            new Date(parsed.data.date),
+        date,
         incidentNumber:  parsed.data.incidentNumber,
         claimNumber:     parsed.data.claimNumber,
         driver:          parsed.data.driver,
@@ -42,6 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
     return NextResponse.json(accident, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

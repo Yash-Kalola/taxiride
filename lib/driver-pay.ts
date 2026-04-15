@@ -80,9 +80,20 @@ export function computeCompanyNet(inputs: PayInputs): number {
   return computePayBreakdown(inputs).companyNet;
 }
 
-/** Payout period (1, 2, or 3) for a given date. */
+/** Payout period (1, 2, or 3) for a given date.
+ *  String input is parsed as a local-date (see lib/dates.ts) so a "YYYY-MM-DD"
+ *  from a date picker isn't shifted into the previous day by UTC parsing. */
 export function computePayoutPeriod(date: Date | string): 1 | 2 | 3 {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  let d: Date;
+  if (typeof date === 'string') {
+    // Avoid a runtime import cycle with lib/dates.ts — inline the date-only path.
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+    d = dateOnly
+      ? new Date(parseInt(dateOnly[1]), parseInt(dateOnly[2]) - 1, parseInt(dateOnly[3]))
+      : new Date(date);
+  } else {
+    d = date;
+  }
   const day = d.getDate();
   if (day <= 10) return 1;
   if (day <= 20) return 2;

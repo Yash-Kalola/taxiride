@@ -16,6 +16,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     await prisma.transactionAttachment.delete({ where: { id: params.id } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

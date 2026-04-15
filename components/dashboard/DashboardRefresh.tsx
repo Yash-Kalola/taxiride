@@ -1,15 +1,22 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function DashboardRefresh() {
   const router = useRouter();
   const [spinning, setSpinning] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending timer when the component unmounts.
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
 
   function refresh() {
     setSpinning(true);
     router.refresh();
-    setTimeout(() => setSpinning(false), 800);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setSpinning(false), 800);
   }
 
   return (

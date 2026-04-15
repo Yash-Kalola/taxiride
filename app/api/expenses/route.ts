@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
   brokerId:  z.string().min(1),
@@ -21,7 +22,8 @@ export async function GET() {
     });
     return NextResponse.json(expenses);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -29,6 +31,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+
+  const date = parseLocalDate(parsed.data.date);
+  if (!date) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
 
   try {
     // Validate cab number if provided — must be a registered vehicle for this broker
@@ -48,7 +53,7 @@ export async function POST(request: NextRequest) {
       data: {
         brokerId:  parsed.data.brokerId,
         cabNumber: parsed.data.cabNumber,
-        date:      new Date(parsed.data.date),
+        date,
         amount:    parsed.data.amount,
         note:      parsed.data.note,
       },
@@ -59,6 +64,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(expense, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

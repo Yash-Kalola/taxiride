@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
+import { parseLocalDate } from '@/lib/dates';
 
 /**
  * GET  /api/daily-sheets      — master list with filters (driverId, vehicleNumber, month, year, shift, isPaid)
@@ -57,7 +58,8 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json(sheets);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -67,9 +69,15 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
+    // Validate all dates up front so we don't half-create a batch.
+    const parsedDates = parsed.data.sheets.map((s) => parseLocalDate(s.date));
+    if (parsedDates.some((d) => d === null)) {
+      return NextResponse.json({ error: 'One or more sheets has an invalid date' }, { status: 400 });
+    }
+
     const created = await prisma.$transaction(
-      parsed.data.sheets.map((s) => {
-        const date = new Date(s.date);
+      parsed.data.sheets.map((s, i) => {
+        const date = parsedDates[i]!;
         const breakdown = computePayBreakdown({
           grossEarnings:         s.grossEarnings,
           gasDeduction:          s.gasDeduction,
@@ -102,8 +110,15 @@ export async function POST(request: NextRequest) {
       })
     );
     return NextResponse.json({ count: created.length, sheets: created }, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'One or more sheets duplicate an existing (driver, date, shift) entry.' },
+        { status: 409 }
+      );
+    }
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -122,6 +137,7 @@ export async function PATCH(request: NextRequest) {
     });
     return NextResponse.json({ updated: result.count });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

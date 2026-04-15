@@ -52,7 +52,8 @@ export async function GET() {
     });
     return NextResponse.json(vehicles);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(vehicle, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

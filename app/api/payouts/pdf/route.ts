@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 });
+    console.error(err);
+    return new Response(JSON.stringify({ error: 'Server error' }), { status: 500 });
   }
 }

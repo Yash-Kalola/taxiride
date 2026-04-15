@@ -295,6 +295,9 @@ model DailySheet {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
+  // Prevent double-entry of the same driver's shift on the same day — a
+  // driver only has one morning sheet and one evening sheet per calendar day.
+  @@unique([driverId, date, shift])
   @@index([driverId, month, year])
   @@index([driverId, payoutPeriod, month, year])
   @@index([date])

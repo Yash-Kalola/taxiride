@@ -178,12 +178,13 @@ export async function POST(request: NextRequest) {
         duplicatesSkipped,
       });
 
-    } catch (err) {
+    } catch (err: any) {
+      console.error('taxicaller import: group failed', group.companyId, err);
       results.push({
         companyId:   group.companyId,
         companyName: company?.companyName ?? group.companyId,
         status:      'error',
-        error:       String(err),
+        error:       typeof err?.message === 'string' ? err.message : 'Import failed',
       });
     }
   }

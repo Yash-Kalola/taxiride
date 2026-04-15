@@ -31,12 +31,14 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
         companyName:   invoice.company.companyName,
         pdfBuffer,
       });
-    } catch (err) {
-      emailError = String(err);
+    } catch (err: any) {
+      console.error('sendInvoiceEmail failed:', err);
+      emailError = typeof err?.message === 'string' ? err.message : 'Failed to send email';
     }
 
     return NextResponse.json({ success: true, emailError });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

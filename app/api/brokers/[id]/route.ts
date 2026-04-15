@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { parseLocalDate } from '@/lib/dates';
 
 const updateSchema = z.object({
   name:                    z.string().min(1).optional(),
@@ -27,7 +28,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     if (!broker) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(broker);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -36,11 +38,24 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const { updatePendingStandRent, ...fields } = parsed.data;
+  let parsedStart: Date | undefined;
+  let parsedEnd:   Date | undefined;
+  if (fields.startDate) {
+    const d = parseLocalDate(fields.startDate);
+    if (!d) return NextResponse.json({ error: 'Invalid start date' }, { status: 400 });
+    parsedStart = d;
+  }
+  if (fields.endDate) {
+    const d = parseLocalDate(fields.endDate);
+    if (!d) return NextResponse.json({ error: 'Invalid end date' }, { status: 400 });
+    parsedEnd = d;
+  }
+
   try {
-    const { updatePendingStandRent, ...fields } = parsed.data;
     const data: Record<string, unknown> = { ...fields };
-    if (fields.startDate) data.startDate = new Date(fields.startDate);
-    if (fields.endDate)   data.endDate   = new Date(fields.endDate);
+    if (parsedStart) data.startDate = parsedStart;
+    if (parsedEnd)   data.endDate   = parsedEnd;
     if (fields.endDate === null) data.endDate = null;
 
     const broker = await prisma.broker.update({ where: { id: params.id }, data });
@@ -79,7 +94,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json(broker);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -89,6 +105,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

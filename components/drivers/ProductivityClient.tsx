@@ -1,20 +1,32 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import Badge from '@/components/ui/Badge';
 import Select from '@/components/ui/Select';
 import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency } from '@/lib/tax';
 import { MONTHS } from '@/lib/constants';
 
+/**
+ * Admin driver productivity view — company P&L side per driver.
+ * Columns mirror the client's working spreadsheet:
+ *   Total (gross) | 60% (company share) | Gas | Debit | Charges | Extra | Co. Net
+ * Driver's 40% take is intentionally omitted — it's on the driver's own page
+ * and on the payout record; it doesn't participate in company P&L.
+ */
+
 interface Row {
   driverId: string; driverName: string; isActive: boolean;
-  currentVehicle: string | null; currentShift: 'MORNING' | 'EVENING' | null;
-  sheetCount: number; totalGross: number;
-  totalNetPay: number; totalHours: number; productivity: number | null;
+  sheetCount: number;
+  totalGross:         number;
+  totalCompanyShare:  number;
+  totalGas:           number;
+  totalDebitFees:     number;
+  totalCallCharge:    number;
+  totalExtra:         number;
+  totalCompanyNet:    number;
 }
 
-type SortKey = 'name' | 'vehicle' | 'shift' | 'hours' | 'gross' | 'net' | 'productivity';
+type SortKey = 'name' | 'gross' | 'share' | 'gas' | 'debit' | 'charges' | 'extra' | 'net';
 type SortDir = 'asc' | 'desc';
 
 export default function ProductivityClient({ initialMonth, initialYear }: { initialMonth: number; initialYear: number }) {
@@ -41,13 +53,14 @@ export default function ProductivityClient({ initialMonth, initialYear }: { init
     copy.sort((a, b) => {
       const get = (r: Row): number | string => {
         switch (sortKey) {
-          case 'name':         return r.driverName.toLowerCase();
-          case 'vehicle':      return parseInt(r.currentVehicle ?? '0') || 0;
-          case 'shift':        return r.currentShift ?? '';
-          case 'hours':        return r.totalHours;
-          case 'gross':        return r.totalGross;
-          case 'net':          return r.totalNetPay;
-          case 'productivity': return r.productivity ?? -Infinity;
+          case 'name':    return r.driverName.toLowerCase();
+          case 'gross':   return r.totalGross;
+          case 'share':   return r.totalCompanyShare;
+          case 'gas':     return r.totalGas;
+          case 'debit':   return r.totalDebitFees;
+          case 'charges': return r.totalCallCharge;
+          case 'extra':   return r.totalExtra;
+          case 'net':     return r.totalCompanyNet;
         }
       };
       const va = get(a); const vb = get(b);
@@ -57,13 +70,12 @@ export default function ProductivityClient({ initialMonth, initialYear }: { init
     return copy;
   }, [rows, sortKey, sortDir]);
 
-  // Top 3 / bottom 3 by net pay (amongst rows with sheets)
+  // Top 3 / bottom 3 by company net (rows with sheets only)
   const { topIds, bottomIds } = useMemo(() => {
     const withActivity = rows.filter((r) => r.sheetCount > 0);
-    const byNet = [...withActivity].sort((a, b) => b.totalNetPay - a.totalNetPay);
+    const byNet = [...withActivity].sort((a, b) => b.totalCompanyNet - a.totalCompanyNet);
     const topIds    = new Set(byNet.slice(0, 3).map((r) => r.driverId));
     const bottomIds = new Set(byNet.slice(-3).map((r) => r.driverId));
-    // If fewer than 6 drivers, don't double-color
     if (byNet.length < 6) {
       byNet.slice(0, 3).forEach((r) => bottomIds.delete(r.driverId));
     }
@@ -72,13 +84,17 @@ export default function ProductivityClient({ initialMonth, initialYear }: { init
 
   function toggleSort(k: SortKey) {
     if (sortKey === k) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(k); setSortDir(k === 'name' || k === 'vehicle' ? 'asc' : 'desc'); }
+    else { setSortKey(k); setSortDir(k === 'name' ? 'asc' : 'desc'); }
   }
 
   const totals = useMemo(() => ({
-    gross: rows.reduce((s, r) => s + r.totalGross, 0),
-    net:   rows.reduce((s, r) => s + r.totalNetPay, 0),
-    hours: rows.reduce((s, r) => s + r.totalHours, 0),
+    gross:   rows.reduce((s, r) => s + r.totalGross,        0),
+    share:   rows.reduce((s, r) => s + r.totalCompanyShare, 0),
+    gas:     rows.reduce((s, r) => s + r.totalGas,          0),
+    debit:   rows.reduce((s, r) => s + r.totalDebitFees,    0),
+    charges: rows.reduce((s, r) => s + r.totalCallCharge,   0),
+    extra:   rows.reduce((s, r) => s + r.totalExtra,        0),
+    net:     rows.reduce((s, r) => s + r.totalCompanyNet,   0),
   }), [rows]);
 
   const years = [year - 1, year, year + 1].sort((a, b) => b - a);
@@ -120,13 +136,14 @@ export default function ProductivityClient({ initialMonth, initialYear }: { init
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <Th label="Driver"       k="name"         sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                  <Th label="Vehicle"      k="vehicle"      sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                  <Th label="Shift"        k="shift"        sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                  <Th label="Hours"        k="hours"        sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
-                  <Th label="Gross"        k="gross"        sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
-                  <Th label="Net Pay"      k="net"          sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
-                  <Th label="$/hr"         k="productivity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="Driver"   k="name"    sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                  <Th label="Total"    k="gross"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="60 %"     k="share"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="Gas"      k="gas"     sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="Debit"    k="debit"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="Charges"  k="charges" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="Extra"    k="extra"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
+                  <Th label="Co. Net"  k="net"     sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -143,19 +160,14 @@ export default function ProductivityClient({ initialMonth, initialYear }: { init
                         {!r.isActive && <span className="ml-2 text-xs text-gray-400">(inactive)</span>}
                         {r.sheetCount === 0 && <p className="text-xs text-gray-400 mt-0.5">No sheets this month</p>}
                       </td>
-                      <td className="px-4 py-3 font-mono font-bold text-gray-900">
-                        {r.currentVehicle ? `#${r.currentVehicle}` : <span className="text-gray-300 font-sans font-normal">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {r.currentShift ? <Badge variant={r.currentShift === 'MORNING' ? 'morning' : 'evening'} /> : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">{r.totalHours.toFixed(1)}</td>
                       <td className="px-4 py-3 text-right text-gray-900 whitespace-nowrap">{formatCurrency(r.totalGross)}</td>
-                      <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${r.totalNetPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {formatCurrency(r.totalNetPay)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-indigo-600 whitespace-nowrap">
-                        {r.productivity === null ? <span className="text-gray-300 font-normal">—</span> : formatCurrency(r.productivity)}
+                      <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">{formatCurrency(r.totalCompanyShare)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{formatCurrency(r.totalGas)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{formatCurrency(r.totalDebitFees)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{formatCurrency(r.totalCallCharge)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{formatCurrency(r.totalExtra)}</td>
+                      <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${r.totalCompanyNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {formatCurrency(r.totalCompanyNet)}
                       </td>
                     </tr>
                   );
@@ -163,22 +175,25 @@ export default function ProductivityClient({ initialMonth, initialYear }: { init
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50">
-                  <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500" colSpan={3}>Totals</td>
-                  <td className="px-4 py-3 text-right font-bold text-gray-700 whitespace-nowrap">{totals.hours.toFixed(1)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Totals</td>
                   <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatCurrency(totals.gross)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatCurrency(totals.share)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.gas)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.debit)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.charges)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.extra)}</td>
                   <td className={`px-4 py-3 text-right font-bold whitespace-nowrap ${totals.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCurrency(totals.net)}
                   </td>
-                  <td />
                 </tr>
               </tfoot>
             </table>
           </div>
 
           <div className="flex gap-4 px-4 py-3 border-t border-gray-100 text-xs text-gray-500">
-            <span><span className="inline-block w-3 h-3 rounded bg-emerald-100 mr-1.5 align-middle" />Top 3 earners</span>
-            <span><span className="inline-block w-3 h-3 rounded bg-amber-100 mr-1.5 align-middle" />Bottom 3 earners</span>
-            <span className="text-gray-400">· Click any column header to sort</span>
+            <span><span className="inline-block w-3 h-3 rounded bg-emerald-100 mr-1.5 align-middle" />Top 3 by company net</span>
+            <span><span className="inline-block w-3 h-3 rounded bg-amber-100 mr-1.5 align-middle" />Bottom 3 by company net</span>
+            <span className="text-gray-400">· Debit comes off the 100% (before 60/40 split); gas/charges/extra come out of the 60%.</span>
           </div>
         </div>
       )}

@@ -44,6 +44,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
     return NextResponse.json(rides);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

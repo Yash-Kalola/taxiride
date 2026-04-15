@@ -36,3 +36,6 @@ next-env.d.ts
 # google service account key (never commit)
 *service-account*.json
 *credentials*.json
+
+# claude code agent state (local tooling only)
+.claude/
