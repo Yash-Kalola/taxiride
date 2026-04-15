@@ -37,21 +37,22 @@ const s = StyleSheet.create({
   driverName:    { fontFamily: 'Helvetica-Bold', fontSize: 12, color: '#111827' },
   driverMeta:    { fontSize: 8, color: '#6B7280' },
 
+  // Formula strip (explains the math)
+  formulaStrip:  { fontSize: 7.5, color: '#6B7280', fontStyle: 'italic', marginBottom: 6, paddingHorizontal: 2 },
+
   // Table
   tableHeader:   { flexDirection: 'row', backgroundColor: '#F9FAFB', padding: '5 8', borderTopWidth: 1, borderTopColor: '#E5E7EB', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   tableRow:      { flexDirection: 'row', padding: '4 8', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   colHdr:        { fontFamily: 'Helvetica-Bold', fontSize: 7.5, textTransform: 'uppercase', letterSpacing: 0.3, color: '#6B7280' },
 
-  cDate:    { width: 52, fontSize: 8 },
-  cShift:   { width: 42, fontSize: 8 },
-  cVehicle: { width: 38, fontSize: 8, textAlign: 'center' },
-  cGross:   { width: 58, fontSize: 8, textAlign: 'right' },
-  cGas:     { width: 46, fontSize: 8, textAlign: 'right', color: '#6B7280' },
-  cDebit:   { width: 46, fontSize: 8, textAlign: 'right', color: '#6B7280' },
-  cCall:    { width: 44, fontSize: 8, textAlign: 'right', color: '#6B7280' },
-  cExtra:   { width: 44, fontSize: 8, textAlign: 'right', color: '#6B7280' },
-  cNet:     { flex: 1,   fontSize: 8, textAlign: 'right', fontFamily: 'Helvetica-Bold' },
-  cHours:   { width: 40, fontSize: 8, textAlign: 'right' },
+  cDate:     { width: 52, fontSize: 8 },
+  cShift:    { width: 42, fontSize: 8 },
+  cVehicle:  { width: 42, fontSize: 8, textAlign: 'center' },
+  cGross:    { width: 70, fontSize: 8, textAlign: 'right' },
+  cDebit:    { width: 62, fontSize: 8, textAlign: 'right', color: '#92400E' },
+  cAdjusted: { width: 70, fontSize: 8, textAlign: 'right' },
+  cHours:    { width: 40, fontSize: 8, textAlign: 'right', color: '#6B7280' },
+  cDriver:   { flex: 1,   fontSize: 8, textAlign: 'right', fontFamily: 'Helvetica-Bold' },
 
   // Per-driver summary
   summary:       { flexDirection: 'row', backgroundColor: '#EEF2FF', padding: '6 8', borderBottomWidth: 1, borderBottomColor: '#C7D2FE' },
@@ -78,13 +79,10 @@ export interface PayoutSheet {
   shift: 'MORNING' | 'EVENING';
   vehicleNumber: string;
   grossEarnings: number;
-  gasDeduction: number;
   debitFee: number;
   debitTransactionCount: number;
-  callChargeDeduction: number;
-  extraExpenseDeduction: number;
   hoursWorked: number;
-  netDriverPay: number;
+  netDriverPay: number;      // 40% of adjusted gross
 }
 
 export interface PayoutDriverData {
@@ -92,8 +90,9 @@ export interface PayoutDriverData {
   driverPhone?: string;
   sheets: PayoutSheet[];
   totalGross: number;
-  totalDeductions: number;
-  totalNetPay: number;
+  totalDebitFees: number;    // sum of (debitFee × count)
+  totalAdjusted: number;     // totalGross − totalDebitFees
+  totalNetPay: number;       // sum of driver 40%
   totalHours: number;
 }
 
@@ -123,17 +122,19 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
         <Text style={s.driverMeta}>{data.sheets.length} sheet{data.sheets.length !== 1 ? 's' : ''} · {data.totalHours.toFixed(1)} hrs</Text>
       </View>
 
+      <Text style={s.formulaStrip}>
+        Driver pay = (Gross − Debit fees) × 40%
+      </Text>
+
       <View style={s.tableHeader}>
         <Text style={[s.colHdr, s.cDate]}>Date</Text>
         <Text style={[s.colHdr, s.cShift]}>Shift</Text>
         <Text style={[s.colHdr, s.cVehicle]}>Cab</Text>
         <Text style={[s.colHdr, s.cGross]}>Gross</Text>
-        <Text style={[s.colHdr, s.cGas]}>Gas</Text>
-        <Text style={[s.colHdr, s.cDebit]}>Debit</Text>
-        <Text style={[s.colHdr, s.cCall]}>Call</Text>
-        <Text style={[s.colHdr, s.cExtra]}>Extra</Text>
+        <Text style={[s.colHdr, s.cDebit]}>Debit Fees</Text>
+        <Text style={[s.colHdr, s.cAdjusted]}>Adjusted</Text>
         <Text style={[s.colHdr, s.cHours]}>Hrs</Text>
-        <Text style={[s.colHdr, s.cNet]}>Net Pay</Text>
+        <Text style={[s.colHdr, s.cDriver]}>Driver Pay</Text>
       </View>
 
       {data.sheets.length === 0 ? (
@@ -141,19 +142,22 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
           <Text style={s.emptyText}>No daily sheets recorded for this period</Text>
         </View>
       ) : data.sheets.map((row, i) => {
-        const debit = row.debitFee * row.debitTransactionCount;
+        const debitTotal = row.debitFee * row.debitTransactionCount;
+        const adjusted   = row.grossEarnings - debitTotal;
         return (
           <View key={i} style={s.tableRow} wrap={false}>
             <Text style={s.cDate}>{fmtDate(row.date)}</Text>
             <Text style={s.cShift}>{row.shift === 'MORNING' ? 'AM' : 'PM'}</Text>
             <Text style={s.cVehicle}>#{row.vehicleNumber}</Text>
             <Text style={s.cGross}>{fmt(row.grossEarnings)}</Text>
-            <Text style={s.cGas}>{row.gasDeduction ? fmt(row.gasDeduction) : '—'}</Text>
-            <Text style={s.cDebit}>{debit ? fmt(debit) : '—'}</Text>
-            <Text style={s.cCall}>{row.callChargeDeduction ? fmt(row.callChargeDeduction) : '—'}</Text>
-            <Text style={s.cExtra}>{row.extraExpenseDeduction ? fmt(row.extraExpenseDeduction) : '—'}</Text>
+            <Text style={s.cDebit}>
+              {debitTotal > 0 ? `−${fmt(debitTotal)}` : '—'}
+            </Text>
+            <Text style={s.cAdjusted}>{fmt(adjusted)}</Text>
             <Text style={s.cHours}>{row.hoursWorked.toFixed(1)}</Text>
-            <Text style={[s.cNet, { color: row.netDriverPay < 0 ? '#DC2626' : '#111827' }]}>{fmt(row.netDriverPay)}</Text>
+            <Text style={[s.cDriver, { color: row.netDriverPay < 0 ? '#DC2626' : '#047857' }]}>
+              {fmt(row.netDriverPay)}
+            </Text>
           </View>
         );
       })}
@@ -164,12 +168,14 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
         <Text style={s.cShift} />
         <Text style={s.cVehicle} />
         <Text style={[s.summaryVal, s.cGross]}>{fmt(data.totalGross)}</Text>
-        <Text style={s.cGas} />
-        <Text style={s.cDebit} />
-        <Text style={s.cCall} />
-        <Text style={[s.summaryVal, s.cExtra]}>−{fmt(data.totalDeductions)}</Text>
+        <Text style={[s.summaryVal, s.cDebit]}>
+          {data.totalDebitFees > 0 ? `−${fmt(data.totalDebitFees)}` : '—'}
+        </Text>
+        <Text style={[s.summaryVal, s.cAdjusted]}>{fmt(data.totalAdjusted)}</Text>
         <Text style={[s.summaryVal, s.cHours]}>{data.totalHours.toFixed(1)}</Text>
-        <Text style={[s.summaryVal, s.cNet, { color: data.totalNetPay < 0 ? '#DC2626' : '#3730A3' }]}>{fmt(data.totalNetPay)}</Text>
+        <Text style={[s.summaryVal, s.cDriver, { color: data.totalNetPay < 0 ? '#DC2626' : '#3730A3' }]}>
+          {fmt(data.totalNetPay)}
+        </Text>
       </View>
     </View>
   );
@@ -237,7 +243,7 @@ function PayoutDoc({
                 <Text style={{ fontSize: 9, textAlign: 'right' }}>{formatCurrency(grandGross)}</Text>
               </View>
               <View style={s.grandRow}>
-                <Text style={s.grandLbl}>Grand Total Net Pay</Text>
+                <Text style={s.grandLbl}>Grand Total Driver Pay (40%)</Text>
                 <Text style={[s.grandVal, { color: grand < 0 ? '#FCA5A5' : '#ffffff' }]}>{formatCurrency(grand)}</Text>
               </View>
             </View>

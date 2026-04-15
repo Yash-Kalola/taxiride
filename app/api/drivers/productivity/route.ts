@@ -23,27 +23,24 @@ export async function GET(request: NextRequest) {
     });
 
     const rows = drivers.map((d) => {
-      const totalGross      = d.dailySheets.reduce((s, ds) => s + ds.grossEarnings, 0);
-      const totalNetPay     = d.dailySheets.reduce((s, ds) => s + ds.netDriverPay, 0);
-      const totalHours      = d.dailySheets.reduce((s, ds) => s + ds.hoursWorked, 0);
-      const totalDeductions = d.dailySheets.reduce((s, ds) =>
-        s + ds.gasDeduction + ds.debitFee * ds.debitTransactionCount + ds.callChargeDeduction + ds.extraExpenseDeduction, 0);
-      const sheetCount      = d.dailySheets.length;
-      const productivity    = computeProductivity(totalNetPay, totalHours);
-      const current         = d.assignments[0] ?? null;
+      const totalGross   = d.dailySheets.reduce((s, ds) => s + ds.grossEarnings, 0);
+      const totalNetPay  = d.dailySheets.reduce((s, ds) => s + ds.netDriverPay, 0);
+      const totalHours   = d.dailySheets.reduce((s, ds) => s + ds.hoursWorked, 0);
+      const sheetCount   = d.dailySheets.length;
+      const productivity = computeProductivity(totalNetPay, totalHours);
+      const current      = d.assignments[0] ?? null;
 
       return {
-        driverId:         d.id,
-        driverName:       d.name,
-        isActive:         d.isActive,
-        currentVehicle:   current?.vehicleNumber ?? null,
-        currentShift:     current?.shift ?? null,
+        driverId:       d.id,
+        driverName:     d.name,
+        isActive:       d.isActive,
+        currentVehicle: current?.vehicleNumber ?? null,
+        currentShift:   current?.shift ?? null,
         sheetCount,
         totalGross,
-        totalDeductions,
         totalNetPay,
         totalHours,
-        productivity,     // null if hours=0
+        productivity,   // null if hours=0
       };
     });
 

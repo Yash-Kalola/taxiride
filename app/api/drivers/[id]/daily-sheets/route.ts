@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { computeNetDriverPay, computePayoutPeriod } from '@/lib/driver-pay';
+import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
 
 const createSchema = z.object({
   vehicleNumber:         z.string().min(1),
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const date = new Date(d.date);
   if (isNaN(date.getTime())) return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
 
-  const netDriverPay = computeNetDriverPay({
+  const breakdown = computePayBreakdown({
     grossEarnings:         d.grossEarnings,
     gasDeduction:          d.gasDeduction,
     debitFee:              d.debitFee,
@@ -73,7 +73,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         extraExpenseDeduction: d.extraExpenseDeduction,
         extraExpenseNote:      d.extraExpenseNote,
         hoursWorked:           d.hoursWorked,
-        netDriverPay,
+        netDriverPay:          breakdown.driverPay,
+        companyNet:            breakdown.companyNet,
         payoutPeriod:          computePayoutPeriod(date),
         month:                 date.getMonth() + 1,
         year:                  date.getFullYear(),

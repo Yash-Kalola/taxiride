@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { formatCurrency } from '@/lib/tax';
+import { MONTHS } from '@/lib/constants';
 import PageHeader from '@/components/ui/PageHeader';
 import DashboardRefresh from '@/components/dashboard/DashboardRefresh';
 import Link from 'next/link';
@@ -13,11 +14,22 @@ export default async function DashboardPage() {
   let ridesCount = 0;
   let dbConnected = true;
 
+  // Company-vehicle P&L for the current month (only isCompanyCar=true vehicles)
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curYear  = now.getFullYear();
+  let pnl = {
+    gross: 0, driverPay: 0, companyShare: 0,
+    gas: 0, call: 0, extra: 0, expenses: 0, companyNet: 0,
+    sheetCount: 0, carCount: 0,
+  };
+
   try {
-    const [allInvoices, companies, rides] = await Promise.all([
+    const [allInvoices, companies, rides, companyCars] = await Promise.all([
       prisma.invoice.findMany({ include: { company: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' } }),
       prisma.company.count(),
       prisma.ride.count(),
+      prisma.brokerVehicle.findMany({ where: { isCompanyCar: true }, select: { cabNumber: true } }),
     ]);
     recentInvoices = allInvoices.slice(0, 5);
     companiesCount = companies;
@@ -35,6 +47,30 @@ export default async function DashboardPage() {
       invoiceCount: allInvoices.length,
       overdueCount: overdueList.length,
     };
+
+    // P&L: aggregate daily sheets for company-owned cabs only
+    const companyCabNumbers = companyCars.map((v) => v.cabNumber);
+    if (companyCabNumbers.length > 0) {
+      const sheets = await prisma.dailySheet.findMany({
+        where: {
+          month: curMonth,
+          year:  curYear,
+          vehicleNumber: { in: companyCabNumbers },
+        },
+      });
+      for (const s of sheets) {
+        pnl.gross        += s.grossEarnings;
+        pnl.driverPay    += s.netDriverPay;
+        pnl.gas          += s.gasDeduction;
+        pnl.call         += s.callChargeDeduction;
+        pnl.extra        += s.extraExpenseDeduction;
+        pnl.companyNet   += s.companyNet;
+      }
+      pnl.expenses     = pnl.gas + pnl.call + pnl.extra;
+      pnl.companyShare = pnl.companyNet + pnl.expenses; // = adjustedGross × 60%
+      pnl.sheetCount   = sheets.length;
+      pnl.carCount     = companyCabNumbers.length;
+    }
   } catch {
     dbConnected = false;
   }
@@ -103,6 +139,51 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* Company Vehicle P&L — current month, company-owned cabs only */}
+      {pnl.carCount > 0 && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Company Vehicle P&amp;L</h2>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {MONTHS[curMonth - 1]} {curYear} · {pnl.carCount} company cab{pnl.carCount !== 1 ? 's' : ''} · {pnl.sheetCount} shift{pnl.sheetCount !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <Link href="/daily-sheets" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">View sheets →</Link>
+          </div>
+
+          {pnl.sheetCount === 0 ? (
+            <div className="px-6 py-10 text-center text-sm text-gray-400">
+              No daily sheets yet for company cabs this month.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6">
+                <PnlCard label="Total Gross"     value={pnl.gross}        tone="neutral" />
+                <PnlCard label="Driver Pay (40%)"  value={pnl.driverPay}  tone="muted"   />
+                <PnlCard label="Company Share (60%)" value={pnl.companyShare} tone="muted" />
+                <PnlCard
+                  label="Company Net"
+                  value={pnl.companyNet}
+                  tone={pnl.companyNet >= 0 ? 'positive' : 'negative'}
+                  sub="after expenses"
+                />
+              </div>
+
+              {pnl.expenses > 0 && (
+                <div className="border-t border-gray-100 bg-gray-50 px-6 py-3 text-xs text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
+                  <span className="uppercase tracking-wide font-semibold text-gray-400">Company expenses:</span>
+                  <span>Gas <span className="font-medium text-gray-700">{formatCurrency(pnl.gas)}</span></span>
+                  <span>Call <span className="font-medium text-gray-700">{formatCurrency(pnl.call)}</span></span>
+                  <span>Extra <span className="font-medium text-gray-700">{formatCurrency(pnl.extra)}</span></span>
+                  <span className="ml-auto">Total <span className="font-semibold text-amber-700">−{formatCurrency(pnl.expenses)}</span></span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Import CTA */}
       <Link href="/import" className="block rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 p-5 shadow-sm hover:from-indigo-700 hover:to-indigo-800 transition-all group">
         <div className="flex items-center justify-between">
@@ -154,6 +235,26 @@ export default async function DashboardPage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function PnlCard({ label, value, tone, sub }: {
+  label: string;
+  value: number;
+  tone: 'neutral' | 'muted' | 'positive' | 'negative';
+  sub?: string;
+}) {
+  const color =
+    tone === 'positive' ? 'text-emerald-600' :
+    tone === 'negative' ? 'text-red-600'     :
+    tone === 'muted'    ? 'text-gray-700'    :
+                          'text-gray-900';
+  return (
+    <div className="rounded-xl bg-gray-50 ring-1 ring-gray-100 p-4">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{label}</p>
+      <p className={`mt-2 text-2xl font-bold ${color}`}>{formatCurrency(value)}</p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
     </div>
   );
 }

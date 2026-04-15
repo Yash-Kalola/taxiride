@@ -285,7 +285,8 @@ model DailySheet {
   extraExpenseDeduction Float     @default(0)
   extraExpenseNote      String    @default("")
   hoursWorked           Float     @default(0)
-  netDriverPay          Float     @default(0)   // stored: (gross×0.60) − gas − (debitFee×count) − call − extra
+  netDriverPay          Float     @default(0)   // driver take-home: (gross − debitFee×count) × 40%
+  companyNet            Float     @default(0)   // company profit: (gross − debitFee×count) × 60% − gas − call − extra
   payoutPeriod          Int                     // 1 (1–10), 2 (11–20), 3 (21–end) — derived from date
   month                 Int
   year                  Int

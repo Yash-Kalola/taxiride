@@ -99,7 +99,6 @@ export default function PayoutsClient({
   const totals = useMemo(() => ({
     gross: payouts.reduce((s, p) => s + p.totalGross, 0),
     net:   payouts.reduce((s, p) => s + p.totalNetPay, 0),
-    deductions: payouts.reduce((s, p) => s + p.totalDeductions, 0),
   }), [payouts]);
 
   const years = Array.from(new Set([initialYear - 1, initialYear, initialYear + 1, ...payouts.map((p) => p.year)])).sort((a, b) => b - a);
@@ -169,7 +168,7 @@ export default function PayoutsClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Driver', 'Period', 'Dates', 'Gross', 'Deductions', 'Net Pay', 'Status', ''].map((h) => (
+                  {['Driver', 'Period', 'Dates', 'Gross', 'Driver Pay (40%)', 'Status', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -185,7 +184,6 @@ export default function PayoutsClient({
                     <td className="px-4 py-3 text-gray-700">P{p.payoutPeriod} · {MONTHS[p.month - 1].slice(0, 3)} {p.year}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatPeriodLabel(p.payoutPeriod as 1|2|3, p.month, p.year)}</td>
                     <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(p.totalGross)}</td>
-                    <td className="px-4 py-3 text-amber-700 whitespace-nowrap">−{formatCurrency(p.totalDeductions)}</td>
                     <td className={`px-4 py-3 font-semibold whitespace-nowrap ${p.totalNetPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {formatCurrency(p.totalNetPay)}
                     </td>
@@ -218,7 +216,6 @@ export default function PayoutsClient({
                     Totals ({payouts.length})
                   </td>
                   <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">{formatCurrency(totals.gross)}</td>
-                  <td className="px-4 py-3 font-bold text-amber-700 whitespace-nowrap">−{formatCurrency(totals.deductions)}</td>
                   <td className={`px-4 py-3 font-bold whitespace-nowrap ${totals.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCurrency(totals.net)}
                   </td>

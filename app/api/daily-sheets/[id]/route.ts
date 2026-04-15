@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { computeNetDriverPay, computePayoutPeriod } from '@/lib/driver-pay';
+import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
 
 const updateSchema = z.object({
   vehicleNumber:         z.string().min(1).optional(),
@@ -58,7 +58,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     if (payChanged || dateChanged) {
-      data.netDriverPay = computeNetDriverPay({
+      const breakdown = computePayBreakdown({
         grossEarnings:         f.grossEarnings         ?? existing.grossEarnings,
         gasDeduction:          f.gasDeduction          ?? existing.gasDeduction,
         debitFee:              f.debitFee              ?? existing.debitFee,
@@ -66,6 +66,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         callChargeDeduction:   f.callChargeDeduction   ?? existing.callChargeDeduction,
         extraExpenseDeduction: f.extraExpenseDeduction ?? existing.extraExpenseDeduction,
       });
+      data.netDriverPay = breakdown.driverPay;
+      data.companyNet   = breakdown.companyNet;
     }
 
     // paidDate tracking

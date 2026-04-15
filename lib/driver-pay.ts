@@ -1,45 +1,83 @@
 /**
- * Driver pay calculation helpers.
+ * Driver pay & company P&L calculation helpers.
  *
- * Business rules (from Phase 3 spec):
- *   • Driver earns 60% of gross earnings for their shift
- *   • From that 60%, deduct gas, debit fees (debitFee × count), call charges, extra expenses
- *   • netDriverPay can go negative — do NOT clamp to zero
- *   • Payout period is derived from the day-of-month:
- *        day 1–10  = period 1
- *        day 11–20 = period 2
- *        day 21–   = period 3
+ * Business rules:
+ *   1. The driver enters gross earnings for their shift (this is the "100%").
+ *   2. Debit transaction fees come OFF THE TOP:
+ *        debitFeeTotal = debitFee × debitTransactionCount
+ *        adjustedGross = gross − debitFeeTotal          (this is the new "100%")
+ *   3. The adjustedGross is split:
+ *        driverPay    = adjustedGross × 40%            (driver's take-home — always clean)
+ *        companyShare = adjustedGross × 60%            (company's share before expenses)
+ *   4. Company-side expenses (gas, call charges, extra) come out of the company's 60%:
+ *        companyNet   = companyShare − gas − callCharge − extra
+ *      The driver's 40% is never reduced by these expenses.
+ *   5. Payout period comes from day-of-month:
+ *        day 1–10   = period 1
+ *        day 11–20  = period 2
+ *        day 21–end = period 3
  */
 
-export const DRIVER_SHARE = 0.60;
+export const DRIVER_SHARE_RATE  = 0.40;
+export const COMPANY_SHARE_RATE = 0.60;
 
-export interface NetPayInputs {
+export interface PayInputs {
   grossEarnings: number;
   gasDeduction: number;
-  debitFee: number;
-  debitTransactionCount: number;
+  debitFee: number;              // per-transaction fee
+  debitTransactionCount: number; // number of debit transactions
   callChargeDeduction: number;
   extraExpenseDeduction: number;
 }
 
-/** Compute net driver pay. May be negative. Non-finite inputs treated as 0. */
-export function computeNetDriverPay(inputs: NetPayInputs): number {
-  const n = (v: number) => (Number.isFinite(v) ? v : 0);
-  const gross   = n(inputs.grossEarnings);
-  const gas     = n(inputs.gasDeduction);
-  const debit   = n(inputs.debitFee) * n(inputs.debitTransactionCount);
-  const call    = n(inputs.callChargeDeduction);
-  const extra   = n(inputs.extraExpenseDeduction);
-  return gross * DRIVER_SHARE - gas - debit - call - extra;
+export interface PayBreakdown {
+  gross: number;           // what the driver entered (100%)
+  debitFeeTotal: number;   // debitFee × count (subtracted off the top)
+  adjustedGross: number;   // gross − debitFeeTotal (the new 100%)
+  driverPay: number;       // adjustedGross × 40% — driver's take-home
+  companyShare: number;    // adjustedGross × 60% — company share before expenses
+  gas: number;
+  callCharge: number;
+  extra: number;
+  companyExpenses: number; // gas + call + extra
+  companyNet: number;      // companyShare − companyExpenses (can be negative if expenses > share)
 }
 
-/** Sum of all deductions (everything subtracted from the 60% share). */
-export function computeTotalDeductions(inputs: NetPayInputs): number {
-  const n = (v: number) => (Number.isFinite(v) ? v : 0);
-  return n(inputs.gasDeduction)
-    + n(inputs.debitFee) * n(inputs.debitTransactionCount)
-    + n(inputs.callChargeDeduction)
-    + n(inputs.extraExpenseDeduction);
+function safe(v: number): number {
+  return Number.isFinite(v) ? v : 0;
+}
+
+/** The canonical calculation. All other helpers delegate to this. */
+export function computePayBreakdown(inputs: PayInputs): PayBreakdown {
+  const gross        = safe(inputs.grossEarnings);
+  const debitFee     = safe(inputs.debitFee);
+  const debitCount   = safe(inputs.debitTransactionCount);
+  const gas          = safe(inputs.gasDeduction);
+  const callCharge   = safe(inputs.callChargeDeduction);
+  const extra        = safe(inputs.extraExpenseDeduction);
+
+  const debitFeeTotal   = debitFee * debitCount;
+  const adjustedGross   = gross - debitFeeTotal;
+  const driverPay       = adjustedGross * DRIVER_SHARE_RATE;
+  const companyShare    = adjustedGross * COMPANY_SHARE_RATE;
+  const companyExpenses = gas + callCharge + extra;
+  const companyNet      = companyShare - companyExpenses;
+
+  return {
+    gross, debitFeeTotal, adjustedGross,
+    driverPay, companyShare,
+    gas, callCharge, extra, companyExpenses, companyNet,
+  };
+}
+
+/** Driver take-home (40% of adjusted gross). */
+export function computeNetDriverPay(inputs: PayInputs): number {
+  return computePayBreakdown(inputs).driverPay;
+}
+
+/** Company net from this sheet (60% of adjusted, minus company expenses). */
+export function computeCompanyNet(inputs: PayInputs): number {
+  return computePayBreakdown(inputs).companyNet;
 }
 
 /** Payout period (1, 2, or 3) for a given date. */
@@ -68,8 +106,8 @@ export function formatPeriodLabel(period: 1 | 2 | 3, month: number, year: number
   return `${monthShort} ${start.getDate()}–${end.getDate()}, ${year}`;
 }
 
-/** Productivity score: net pay per hour. Returns null if hours is 0 (don't divide). */
-export function computeProductivity(netPay: number, hours: number): number | null {
+/** Productivity score: pay per hour. Returns null if hours is 0 (don't divide). */
+export function computeProductivity(pay: number, hours: number): number | null {
   if (!hours || hours <= 0) return null;
-  return netPay / hours;
+  return pay / hours;
 }

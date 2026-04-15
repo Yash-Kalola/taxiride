@@ -10,7 +10,7 @@ import { MONTHS } from '@/lib/constants';
 interface Row {
   driverId: string; driverName: string; isActive: boolean;
   currentVehicle: string | null; currentShift: 'MORNING' | 'EVENING' | null;
-  sheetCount: number; totalGross: number; totalDeductions: number;
+  sheetCount: number; totalGross: number;
   totalNetPay: number; totalHours: number; productivity: number | null;
 }
 

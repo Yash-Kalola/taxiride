@@ -30,24 +30,24 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       shift:                 s.shift as 'MORNING' | 'EVENING',
       vehicleNumber:         s.vehicleNumber,
       grossEarnings:         s.grossEarnings,
-      gasDeduction:          s.gasDeduction,
       debitFee:              s.debitFee,
       debitTransactionCount: s.debitTransactionCount,
-      callChargeDeduction:   s.callChargeDeduction,
-      extraExpenseDeduction: s.extraExpenseDeduction,
       hoursWorked:           s.hoursWorked,
       netDriverPay:          s.netDriverPay,
     }));
 
-    const totalHours = sheetsRaw.reduce((sum, s) => sum + s.hoursWorked, 0);
+    const totalHours      = sheetsRaw.reduce((sum, s) => sum + s.hoursWorked, 0);
+    const totalDebitFees  = sheetsRaw.reduce((sum, s) => sum + s.debitFee * s.debitTransactionCount, 0);
+    const totalAdjusted   = payout.totalGross - totalDebitFees;
 
     const driverData: PayoutDriverData = {
-      driverName:      payout.driver.name,
-      driverPhone:     payout.driver.phone || undefined,
+      driverName:     payout.driver.name,
+      driverPhone:    payout.driver.phone || undefined,
       sheets,
-      totalGross:      payout.totalGross,
-      totalDeductions: payout.totalDeductions,
-      totalNetPay:     payout.totalNetPay,
+      totalGross:     payout.totalGross,
+      totalDebitFees,
+      totalAdjusted,
+      totalNetPay:    payout.totalNetPay,
       totalHours,
     };
 

@@ -9,7 +9,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency } from '@/lib/tax';
-import { computeNetDriverPay, computeProductivity, formatPeriodLabel } from '@/lib/driver-pay';
+import { computePayBreakdown, computeProductivity, formatPeriodLabel } from '@/lib/driver-pay';
 import { MONTHS } from '@/lib/constants';
 
 interface Assignment {
@@ -21,7 +21,7 @@ interface DailySheet {
   shift: 'MORNING' | 'EVENING';
   grossEarnings: number; gasDeduction: number; debitFee: number; debitTransactionCount: number;
   callChargeDeduction: number; extraExpenseDeduction: number; extraExpenseNote: string;
-  hoursWorked: number; netDriverPay: number; payoutPeriod: number;
+  hoursWorked: number; netDriverPay: number; companyNet: number; payoutPeriod: number;
   month: number; year: number; isPaid: boolean; paidDate: string | null;
 }
 interface Payout {
@@ -85,13 +85,12 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
 
   // Summary cards
   const summary = useMemo(() => {
-    const gross      = sheetsInMonth.reduce((s, x) => s + x.grossEarnings, 0);
-    const net        = sheetsInMonth.reduce((s, x) => s + x.netDriverPay, 0);
-    const hours      = sheetsInMonth.reduce((s, x) => s + x.hoursWorked, 0);
-    const deductions = sheetsInMonth.reduce((s, x) =>
-      s + x.gasDeduction + x.debitFee * x.debitTransactionCount + x.callChargeDeduction + x.extraExpenseDeduction, 0);
-    const productivity = computeProductivity(net, hours);
-    return { gross, net, hours, deductions, productivity };
+    const gross       = sheetsInMonth.reduce((s, x) => s + x.grossEarnings, 0);
+    const driverPay   = sheetsInMonth.reduce((s, x) => s + x.netDriverPay, 0);
+    const companyNet  = sheetsInMonth.reduce((s, x) => s + (x.companyNet ?? 0), 0);
+    const hours       = sheetsInMonth.reduce((s, x) => s + x.hoursWorked, 0);
+    const productivity = computeProductivity(driverPay, hours);
+    return { gross, driverPay, companyNet, hours, productivity };
   }, [sheetsInMonth]);
 
   // 10-day periods (3 cards for this month)
@@ -101,18 +100,16 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
       const sheets = sheetsInMonth.filter((s) => s.payoutPeriod === period);
       const existing = driver.payouts.find((p) => p.payoutPeriod === period && p.month === viewMonth && p.year === viewYear) ?? null;
       const totals = {
-        gross: sheets.reduce((s, x) => s + x.grossEarnings, 0),
-        net:   sheets.reduce((s, x) => s + x.netDriverPay, 0),
-        deductions: sheets.reduce((s, x) =>
-          s + x.gasDeduction + x.debitFee * x.debitTransactionCount + x.callChargeDeduction + x.extraExpenseDeduction, 0),
+        gross:     sheets.reduce((s, x) => s + x.grossEarnings, 0),
+        driverPay: sheets.reduce((s, x) => s + x.netDriverPay, 0),
       };
       return { period, sheetCount: sheets.length, totals, existing };
     });
   }, [sheetsInMonth, driver.payouts, viewMonth, viewYear]);
 
-  // Live net pay preview for sheet modal
+  // Live pay breakdown for sheet modal
   const sheetPreview = useMemo(() => {
-    return computeNetDriverPay({
+    return computePayBreakdown({
       grossEarnings:         parseNum(sheetForm.grossEarnings),
       gasDeduction:          parseNum(sheetForm.gasDeduction),
       debitFee:              parseNum(sheetForm.debitFee),
@@ -290,9 +287,9 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <SummaryCard label="Total Earned"     value={formatCurrency(summary.gross)} tone="indigo" />
-        <SummaryCard label="Deductions"       value={formatCurrency(summary.deductions)} tone="amber" />
-        <SummaryCard label="Net Pay"          value={formatCurrency(summary.net)} tone="emerald" />
+        <SummaryCard label="Gross Earned"     value={formatCurrency(summary.gross)} tone="indigo" />
+        <SummaryCard label="Driver Pay (40%)" value={formatCurrency(summary.driverPay)} tone="emerald" />
+        <SummaryCard label="Company Net (60% − expenses)" value={formatCurrency(summary.companyNet)} tone={summary.companyNet >= 0 ? 'slate' : 'amber'} small />
         <SummaryCard label="Hours Worked"     value={`${summary.hours.toFixed(1)} hrs`} tone="slate" />
         <SummaryCard label="Productivity"
           value={summary.productivity === null ? '—' : `${formatCurrency(summary.productivity)}/hr`}
@@ -305,50 +302,52 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Date', 'Shift', 'Cab', 'Gross', 'Gas', 'Debit', 'Call', 'Extra', 'Net Pay', 'Hrs', 'Paid', ''].map((h) => (
+                {['Date', 'Shift', 'Cab', 'Gross', 'Debit Fees', 'Adjusted', 'Driver (40%)', 'Co. Net', 'Hrs', 'Paid', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {sheetsInMonth.length === 0 ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-gray-400">No daily sheets for {MONTHS[viewMonth - 1]} {viewYear}.</td></tr>
-              ) : sheetsInMonth.map((s) => (
-                <tr key={s.id} className="group hover:bg-gray-50">
-                  <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{format(new Date(s.date), 'MMM d')}</td>
-                  <td className="px-3 py-3"><Badge variant={s.shift === 'MORNING' ? 'morning' : 'evening'} /></td>
-                  <td className="px-3 py-3 font-mono font-bold text-gray-900">#{s.vehicleNumber}</td>
-                  <td className="px-3 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(s.grossEarnings)}</td>
-                  <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{s.gasDeduction ? formatCurrency(s.gasDeduction) : '—'}</td>
-                  <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
-                    {s.debitTransactionCount > 0
-                      ? <span title={`${s.debitTransactionCount} × ${formatCurrency(s.debitFee)}`}>{formatCurrency(s.debitFee * s.debitTransactionCount)}</span>
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{s.callChargeDeduction ? formatCurrency(s.callChargeDeduction) : '—'}</td>
-                  <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
-                    {s.extraExpenseDeduction
-                      ? <span title={s.extraExpenseNote}>{formatCurrency(s.extraExpenseDeduction)}</span>
-                      : '—'}
-                  </td>
-                  <td className={`px-3 py-3 font-semibold whitespace-nowrap ${s.netDriverPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {formatCurrency(s.netDriverPay)}
-                  </td>
-                  <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{s.hoursWorked.toFixed(1)}</td>
-                  <td className="px-3 py-3">
-                    <button onClick={() => togglePaid(s)} className="cursor-pointer">
-                      <Badge variant={s.isPaid ? 'paid' : 'pending'} />
-                    </button>
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button size="sm" variant="ghost" onClick={() => openEditSheet(s)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => deleteSheet(s)}
-                        className="text-red-500 hover:bg-red-50">Delete</Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-gray-400">No daily sheets for {MONTHS[viewMonth - 1]} {viewYear}.</td></tr>
+              ) : sheetsInMonth.map((s) => {
+                const debitTotal = s.debitFee * s.debitTransactionCount;
+                const adjusted   = s.grossEarnings - debitTotal;
+                return (
+                  <tr key={s.id} className="group hover:bg-gray-50">
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{format(new Date(s.date), 'MMM d')}</td>
+                    <td className="px-3 py-3"><Badge variant={s.shift === 'MORNING' ? 'morning' : 'evening'} /></td>
+                    <td className="px-3 py-3 font-mono font-bold text-gray-900">#{s.vehicleNumber}</td>
+                    <td className="px-3 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(s.grossEarnings)}</td>
+                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
+                      {debitTotal > 0
+                        ? <span title={`${s.debitTransactionCount} × ${formatCurrency(s.debitFee)}`}>−{formatCurrency(debitTotal)}</span>
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrency(adjusted)}</td>
+                    <td className="px-3 py-3 font-semibold text-emerald-600 whitespace-nowrap">
+                      {formatCurrency(s.netDriverPay)}
+                    </td>
+                    <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-slate-700' : 'text-red-600'}`}
+                        title={`60% share − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
+                      {formatCurrency(s.companyNet ?? 0)}
+                    </td>
+                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{s.hoursWorked.toFixed(1)}</td>
+                    <td className="px-3 py-3">
+                      <button onClick={() => togglePaid(s)} className="cursor-pointer">
+                        <Badge variant={s.isPaid ? 'paid' : 'pending'} />
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button size="sm" variant="ghost" onClick={() => openEditSheet(s)}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteSheet(s)}
+                          className="text-red-500 hover:bg-red-50">Delete</Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -377,14 +376,10 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
                   <span className="text-gray-500">Gross</span>
                   <span className="font-medium text-gray-700">{formatCurrency(totals.gross)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Deductions</span>
-                  <span className="font-medium text-amber-700">−{formatCurrency(totals.deductions)}</span>
-                </div>
                 <div className="flex justify-between border-t border-gray-100 pt-1.5 mt-1.5">
-                  <span className="font-semibold text-gray-900">Net Pay</span>
-                  <span className={`font-bold ${totals.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {formatCurrency(totals.net)}
+                  <span className="font-semibold text-gray-900">Driver Pay (40%)</span>
+                  <span className="font-bold text-emerald-600">
+                    {formatCurrency(totals.driverPay)}
                   </span>
                 </div>
               </div>
@@ -443,31 +438,36 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <Input label="Gross Earnings ($)" type="number" min={0} step={0.01} placeholder="0.00"
             value={sheetForm.grossEarnings}
             onChange={(e) => setSheetForm((f) => ({ ...f, grossEarnings: e.target.value }))}
-          />
-          <Input label="Gas Deduction ($)" type="number" min={0} step={0.01} placeholder="0.00"
-            value={sheetForm.gasDeduction}
-            onChange={(e) => setSheetForm((f) => ({ ...f, gasDeduction: e.target.value }))}
-          />
-          <Input label="Debit Fee per Txn ($)" type="number" min={0} step={0.01} placeholder="0.50"
-            value={sheetForm.debitFee}
-            onChange={(e) => setSheetForm((f) => ({ ...f, debitFee: e.target.value }))}
-            hint={
-              (parseInt0(sheetForm.debitTransactionCount) > 0 && parseNum(sheetForm.debitFee) > 0)
-                ? `Total: ${formatCurrency(parseNum(sheetForm.debitFee) * parseInt0(sheetForm.debitTransactionCount))}`
-                : undefined
-            }
+            hint="Total take — this is the 100%"
           />
           <Input label="Debit Txn Count" type="number" min={0} step={1} placeholder="0"
             value={sheetForm.debitTransactionCount}
             onChange={(e) => setSheetForm((f) => ({ ...f, debitTransactionCount: e.target.value }))}
+            hint="# of debit transactions (fees come off the top)"
+          />
+          <Input label="Debit Fee per Txn ($)" type="number" min={0} step={0.01} placeholder="1.00"
+            value={sheetForm.debitFee}
+            onChange={(e) => setSheetForm((f) => ({ ...f, debitFee: e.target.value }))}
+            hint={
+              (parseInt0(sheetForm.debitTransactionCount) > 0 && parseNum(sheetForm.debitFee) > 0)
+                ? `Total off the top: ${formatCurrency(parseNum(sheetForm.debitFee) * parseInt0(sheetForm.debitTransactionCount))}`
+                : undefined
+            }
+          />
+          <Input label="Gas ($)" type="number" min={0} step={0.01} placeholder="0.00"
+            value={sheetForm.gasDeduction}
+            onChange={(e) => setSheetForm((f) => ({ ...f, gasDeduction: e.target.value }))}
+            hint="Company expense (from 60%)"
           />
           <Input label="Call Charge ($)" type="number" min={0} step={0.01} placeholder="0.00"
             value={sheetForm.callChargeDeduction}
             onChange={(e) => setSheetForm((f) => ({ ...f, callChargeDeduction: e.target.value }))}
+            hint="Company expense (from 60%)"
           />
           <Input label="Extra Expense ($)" type="number" min={0} step={0.01} placeholder="0.00"
             value={sheetForm.extraExpenseDeduction}
             onChange={(e) => setSheetForm((f) => ({ ...f, extraExpenseDeduction: e.target.value }))}
+            hint="Company expense (from 60%)"
           />
           <div className="col-span-2">
             <Input label="Extra Expense Note (optional)" placeholder="e.g. car wash"
@@ -477,19 +477,47 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           </div>
         </div>
 
-        {/* Live preview */}
+        {/* Live preview — full breakdown */}
         <div className="mt-4 rounded-xl bg-indigo-50 border border-indigo-100 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Net Driver Pay (Live)</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {formatCurrency(parseNum(sheetForm.grossEarnings))} × 60%
-                − gas − debit − call − extra
-              </p>
-            </div>
-            <p className={`text-2xl font-bold ${sheetPreview >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {formatCurrency(sheetPreview)}
-            </p>
+          <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Live Calculation</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+            <span className="text-gray-600">Gross (100%)</span>
+            <span className="text-right text-gray-900 font-medium">{formatCurrency(sheetPreview.gross)}</span>
+
+            <span className="text-gray-600">
+              Debit fees
+              {sheetPreview.debitFeeTotal > 0 && (
+                <span className="text-xs text-gray-400 ml-1">
+                  ({parseInt0(sheetForm.debitTransactionCount)} × {formatCurrency(parseNum(sheetForm.debitFee))})
+                </span>
+              )}
+            </span>
+            <span className="text-right text-amber-700 font-medium">−{formatCurrency(sheetPreview.debitFeeTotal)}</span>
+
+            <span className="text-gray-700 font-semibold border-t border-indigo-200 pt-1.5">Adjusted (new 100%)</span>
+            <span className="text-right text-gray-900 font-bold border-t border-indigo-200 pt-1.5">{formatCurrency(sheetPreview.adjustedGross)}</span>
+
+            <span className="text-emerald-700 font-semibold mt-2">Driver pay (40%)</span>
+            <span className="text-right text-emerald-600 font-bold text-lg mt-2">{formatCurrency(sheetPreview.driverPay)}</span>
+
+            <span className="text-gray-500 text-xs mt-2">Company share (60%)</span>
+            <span className="text-right text-gray-600 text-xs mt-2">{formatCurrency(sheetPreview.companyShare)}</span>
+
+            {sheetPreview.companyExpenses > 0 && (
+              <>
+                <span className="text-gray-500 text-xs">
+                  − Gas {formatCurrency(sheetPreview.gas)}
+                  {sheetPreview.callCharge > 0 && <> · Call {formatCurrency(sheetPreview.callCharge)}</>}
+                  {sheetPreview.extra > 0      && <> · Extra {formatCurrency(sheetPreview.extra)}</>}
+                </span>
+                <span className="text-right text-amber-700 text-xs">−{formatCurrency(sheetPreview.companyExpenses)}</span>
+              </>
+            )}
+
+            <span className="text-slate-700 font-semibold border-t border-indigo-200 pt-1.5">Company net</span>
+            <span className={`text-right font-bold border-t border-indigo-200 pt-1.5 ${sheetPreview.companyNet >= 0 ? 'text-slate-900' : 'text-red-600'}`}>
+              {formatCurrency(sheetPreview.companyNet)}
+            </span>
           </div>
         </div>
 

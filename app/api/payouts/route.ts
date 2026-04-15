@@ -61,10 +61,12 @@ export async function POST(request: NextRequest) {
       where: { driverId, payoutPeriod, month, year },
     });
 
-    const totalGross  = sheets.reduce((s, x) => s + x.grossEarnings, 0);
-    const totalNetPay = sheets.reduce((s, x) => s + x.netDriverPay, 0);
-    const totalDeductions = sheets.reduce((s, x) =>
-      s + x.gasDeduction + x.debitFee * x.debitTransactionCount + x.callChargeDeduction + x.extraExpenseDeduction, 0);
+    const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
+    const totalNetPay     = sheets.reduce((s, x) => s + x.netDriverPay, 0);
+    // Under the new 40/60 model, "deductions from gross to reach driver pay" =
+    //   debit fees (off-the-top) + company's 60% share.
+    // Equivalent to: totalGross - totalNetPay. Gas/call/extra are company-side, not driver deductions.
+    const totalDeductions = totalGross - totalNetPay;
 
     // Upsert on unique (driverId, payoutPeriod, month, year)
     const payout = await prisma.driverPayout.upsert({

@@ -44,34 +44,35 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Group sums per driver
-    const sumsByDriver = new Map<string, { gross: number; deductions: number; net: number }>();
-    for (const d of drivers) sumsByDriver.set(d.id, { gross: 0, deductions: 0, net: 0 });
+    // Group sums per driver. Under the 40/60 model, "deductions from driver's gross" =
+    // totalGross − totalNetPay (debit fees + company share). Gas/call/extra are company expenses.
+    const sumsByDriver = new Map<string, { gross: number; net: number }>();
+    for (const d of drivers) sumsByDriver.set(d.id, { gross: 0, net: 0 });
     for (const s of sheets) {
       const cur = sumsByDriver.get(s.driverId)!;
-      cur.gross      += s.grossEarnings;
-      cur.net        += s.netDriverPay;
-      cur.deductions += s.gasDeduction + s.debitFee * s.debitTransactionCount + s.callChargeDeduction + s.extraExpenseDeduction;
+      cur.gross += s.grossEarnings;
+      cur.net   += s.netDriverPay;
     }
 
     // Upsert each driver's payout in parallel inside a transaction
     const payouts = await prisma.$transaction(
       drivers.map((d) => {
         const sums = sumsByDriver.get(d.id)!;
+        const deductions = sums.gross - sums.net;
         return prisma.driverPayout.upsert({
           where: { driverId_payoutPeriod_month_year: { driverId: d.id, payoutPeriod: period, month, year } },
           update: {
-            totalGross: sums.gross,
-            totalDeductions: sums.deductions,
-            totalNetPay: sums.net,
+            totalGross:      sums.gross,
+            totalDeductions: deductions,
+            totalNetPay:     sums.net,
             periodStart: start, periodEnd: end,
           },
           create: {
             driverId: d.id, payoutPeriod: period, month, year,
             periodStart: start, periodEnd: end,
-            totalGross: sums.gross,
-            totalDeductions: sums.deductions,
-            totalNetPay: sums.net,
+            totalGross:      sums.gross,
+            totalDeductions: deductions,
+            totalNetPay:     sums.net,
             status: 'DRAFT',
           },
         });

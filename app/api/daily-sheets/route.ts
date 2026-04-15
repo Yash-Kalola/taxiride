@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { computeNetDriverPay, computePayoutPeriod } from '@/lib/driver-pay';
+import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
 
 /**
  * GET  /api/daily-sheets      — master list with filters (driverId, vehicleNumber, month, year, shift, isPaid)
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     const created = await prisma.$transaction(
       parsed.data.sheets.map((s) => {
         const date = new Date(s.date);
-        const net = computeNetDriverPay({
+        const breakdown = computePayBreakdown({
           grossEarnings:         s.grossEarnings,
           gasDeduction:          s.gasDeduction,
           debitFee:              s.debitFee,
@@ -92,7 +92,8 @@ export async function POST(request: NextRequest) {
             extraExpenseDeduction: s.extraExpenseDeduction,
             extraExpenseNote:      s.extraExpenseNote,
             hoursWorked:           s.hoursWorked,
-            netDriverPay:          net,
+            netDriverPay:          breakdown.driverPay,
+            companyNet:            breakdown.companyNet,
             payoutPeriod:          computePayoutPeriod(date),
             month:                 date.getMonth() + 1,
             year:                  date.getFullYear(),
