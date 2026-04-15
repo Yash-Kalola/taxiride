@@ -123,6 +123,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [brokerError,   setBrokerError]  = useState('');
   const [filterMonth,   setFilterMonth]  = useState('');
   const [filterYear,    setFilterYear]   = useState('');
+  const [filterTxStatus, setFilterTxStatus] = useState('');
 
   const today = new Date();
   const thisMonth = today.getMonth() + 1;
@@ -184,9 +185,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     return allRows.filter((t) => {
       if (filterMonth && String(t.month) !== filterMonth) return false;
       if (filterYear  && String(t.year)  !== filterYear)  return false;
+      if (filterTxStatus === 'UNPAID' && t.status === 'PAID') return false;
+      if (filterTxStatus === 'PAID'   && t.status !== 'PAID') return false;
       return true;
     });
-  }, [allRows, filterMonth, filterYear]);
+  }, [allRows, filterMonth, filterYear, filterTxStatus]);
 
   // Monthly charge generation status
   const thisMonthStandRentCount = useMemo(() =>
@@ -759,19 +762,36 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               <option value="">All Years</option>
               {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>
+            <select
+              value={filterTxStatus}
+              onChange={(e) => setFilterTxStatus(e.target.value)}
+              className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Status</option>
+              <option value="UNPAID">Unpaid</option>
+              <option value="PAID">Paid</option>
+            </select>
           </div>
-          <Link
-            href={`/expenses?broker=${broker.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
-          >
-            + Add Expense
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.open(`/api/brokers/${broker.id}/statement?month=${viewMonth}&year=${viewYear}`, '_blank')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Download Statement
+            </button>
+            <Link
+              href={`/expenses?broker=${broker.id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+            >
+              + Add Expense
+            </Link>
+          </div>
         </div>
 
         {displayed.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-14 text-center">
             <p className="text-base font-semibold text-gray-900">No transactions</p>
-            <p className="mt-1 text-sm text-gray-500">{filterMonth || filterYear ? 'Try clearing the filters.' : 'Add the first transaction above.'}</p>
+            <p className="mt-1 text-sm text-gray-500">{filterMonth || filterYear || filterTxStatus ? 'Try clearing the filters.' : 'Add the first transaction above.'}</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">

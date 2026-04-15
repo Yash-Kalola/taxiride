@@ -51,7 +51,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
   const [invoices, setInvoices]           = useState<Invoice[]>(initialInvoices);
   const [filterYear,    setFilterYear]    = useState<number | ''>('');
   const [filterMonth,   setFilterMonth]   = useState('');
-  const [filterStatus,  setFilterStatus]  = useState('');
+  const [filterStatus,  setFilterStatus]  = useState('UNPAID');
   const [filterCompany, setFilterComp]    = useState('');
   const [filterFlagged, setFilterFlagged] = useState('');
   const [searchQuery,   setSearchQuery]   = useState('');
@@ -80,7 +80,8 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
       if (filterYear    && inv.year      !== filterYear)    return false;
       if (filterMonth   && inv.month     !== filterMonth)   return false;
       if (filterCompany && inv.companyId !== filterCompany) return false;
-      if (filterStatus  && inv.status    !== filterStatus)  return false;
+      if (filterStatus === 'UNPAID' && inv.status === 'PAID') return false;
+      if (filterStatus === 'PAID'   && inv.status !== 'PAID') return false;
       if (filterFlagged === 'yes' && !(inv.flagged && !inv.verified)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -212,10 +213,9 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
             {companies.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
           </Select>
           <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="w-32">
-            <option value="">All Status</option>
-            <option value="DRAFT">Draft</option>
-            <option value="PENDING">Pending</option>
+            <option value="UNPAID">Unpaid</option>
             <option value="PAID">Paid</option>
+            <option value="">All</option>
           </Select>
           <Select value={filterFlagged} onChange={(e) => setFilterFlagged(e.target.value)} className="w-36">
             <option value="">All Invoices</option>

@@ -89,11 +89,11 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
         action={<Link href="/brokers"><span className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800">← All Brokers</span></Link>}
       />
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
+      <div className="overflow-auto rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 max-h-[70vh]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="sticky left-0 bg-gray-50 px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 min-w-[160px]">
+              <th className="sticky left-0 z-30 bg-gray-50 px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 min-w-[160px]">
                 Broker
               </th>
               {months.map((m) => (
@@ -109,7 +109,7 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
           <tbody className="divide-y divide-gray-50">
             {brokers.map((b) => (
               <tr key={b.id} className="hover:bg-gray-50 transition-colors">
-                <td className="sticky left-0 bg-white px-5 py-4 hover:bg-gray-50">
+                <td className="sticky left-0 z-10 bg-white px-5 py-4 hover:bg-gray-50">
                   <button onClick={() => setPanelBroker(b)} className="font-semibold text-indigo-600 hover:text-indigo-800 text-left">
                     {b.name}
                   </button>
@@ -152,9 +152,9 @@ export default function BrokerOverview({ brokers, months }: { brokers: BrokerRow
               </tr>
             ))}
           </tbody>
-          <tfoot>
+          <tfoot className="sticky bottom-0 z-20">
             <tr className="border-t-2 border-gray-200 bg-gray-50">
-              <td className="sticky left-0 bg-gray-50 px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <td className="sticky left-0 z-30 bg-gray-50 px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Total
               </td>
               {months.map((m) => (
