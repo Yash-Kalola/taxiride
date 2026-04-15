@@ -123,7 +123,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   const [brokerError,   setBrokerError]  = useState('');
   const [filterMonth,   setFilterMonth]  = useState('');
   const [filterYear,    setFilterYear]   = useState('');
-  const [filterTxStatus, setFilterTxStatus] = useState('');
+  const [filterTxStatus, setFilterTxStatus] = useState('UNPAID');
 
   const today = new Date();
   const thisMonth = today.getMonth() + 1;
