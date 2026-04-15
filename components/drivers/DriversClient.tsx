@@ -21,8 +21,12 @@ interface Driver {
 type Filter = 'active' | 'inactive' | 'all';
 type ModalMode = 'add' | 'edit' | null;
 
-const EMPTY_FORM = { name: '', phone: '', licenseNumber: '', startDate: new Date().toISOString().split('T')[0] };
-const EMPTY_ASSIGN = { vehicleNumber: '', shift: 'MORNING' as 'MORNING' | 'EVENING', startDate: new Date().toISOString().split('T')[0] };
+const EMPTY_FORM = {
+  name: '', phone: '', licenseNumber: '',
+  startDate:     new Date().toISOString().split('T')[0],
+  vehicleNumber: '',
+  shift:         'MORNING' as 'MORNING' | 'EVENING',
+};
 
 export default function DriversClient({ initialDrivers }: { initialDrivers: Driver[] }) {
   const [drivers,     setDrivers]     = useState<Driver[]>(initialDrivers);
@@ -33,12 +37,6 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
   const [error,       setError]       = useState('');
   const [filter,      setFilter]      = useState<Filter>('active');
 
-  // Assignment modal state
-  const [assignDriver, setAssignDriver] = useState<Driver | null>(null);
-  const [assignForm,   setAssignForm]   = useState(EMPTY_ASSIGN);
-  const [savingAssign, setSavingAssign] = useState(false);
-  const [assignError,  setAssignError]  = useState('');
-
   const filtered = useMemo(() => {
     if (filter === 'active')   return drivers.filter((d) => d.isActive);
     if (filter === 'inactive') return drivers.filter((d) => !d.isActive);
@@ -47,11 +45,14 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
 
   function openAdd() { setForm(EMPTY_FORM); setEditing(null); setError(''); setModal('add'); }
   function openEdit(d: Driver) {
+    const cur = d.assignments[0];
     setForm({
       name:          d.name,
       phone:         d.phone,
       licenseNumber: d.licenseNumber,
       startDate:     d.startDate ? d.startDate.split('T')[0] : '',
+      vehicleNumber: cur?.vehicleNumber ?? '',
+      shift:         cur?.shift ?? 'MORNING',
     });
     setEditing(d); setError(''); setModal('edit');
   }
@@ -59,18 +60,55 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
   async function save() {
     setSaving(true); setError('');
     try {
-      const payload: any = {
+      // Step 1: create or update the driver
+      const driverPayload: any = {
         name:          form.name,
         phone:         form.phone,
         licenseNumber: form.licenseNumber,
       };
-      if (form.startDate) payload.startDate = form.startDate;
+      if (form.startDate) driverPayload.startDate = form.startDate;
       const url    = modal === 'edit' ? `/api/drivers/${editing!.id}` : '/api/drivers';
       const method = modal === 'edit' ? 'PUT' : 'POST';
-      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res    = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' },
+        body:   JSON.stringify(driverPayload),
+      });
       const data   = await res.json();
       if (!res.ok) { setError(typeof data.error === 'string' ? data.error : 'Failed to save'); return; }
-      // Refresh the whole list to pick up assignment changes consistently
+
+      // Step 2: create or replace the vehicle assignment if vehicle# is provided
+      //   - on add: always create a new assignment
+      //   - on edit: create only if vehicle# or shift actually changed from the current one
+      const driverId = modal === 'edit' ? editing!.id : data.id;
+      if (form.vehicleNumber.trim() && driverId) {
+        const current = modal === 'edit' ? editing!.assignments[0] : null;
+        const changed =
+          !current ||
+          current.vehicleNumber !== form.vehicleNumber.trim() ||
+          current.shift !== form.shift;
+        if (changed) {
+          const assignRes = await fetch(`/api/drivers/${driverId}/assignments`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              vehicleNumber: form.vehicleNumber.trim(),
+              shift:         form.shift,
+              startDate:     form.startDate || new Date().toISOString().split('T')[0],
+            }),
+          });
+          if (!assignRes.ok) {
+            const assignData = await assignRes.json().catch(() => ({}));
+            setError(typeof assignData.error === 'string'
+              ? `Driver saved, but vehicle assignment failed: ${assignData.error}`
+              : 'Driver saved, but vehicle assignment failed.');
+            const fresh = await fetch('/api/drivers').then((r) => r.json());
+            setDrivers(fresh);
+            return;
+          }
+        }
+      }
+
+      // Refresh the list so the new vehicle/shift columns reflect immediately
       const fresh = await fetch('/api/drivers').then((r) => r.json());
       setDrivers(fresh);
       setModal(null);
@@ -93,34 +131,6 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
       const fresh = await fetch('/api/drivers').then((r) => r.json());
       setDrivers(fresh);
     } catch { alert('Network error'); }
-  }
-
-  function openAssign(d: Driver) {
-    const cur = d.assignments[0];
-    setAssignForm({
-      vehicleNumber: cur?.vehicleNumber ?? '',
-      shift:         cur?.shift ?? 'MORNING',
-      startDate:     new Date().toISOString().split('T')[0],
-    });
-    setAssignDriver(d); setAssignError('');
-  }
-
-  async function saveAssignment() {
-    if (!assignDriver) return;
-    setSavingAssign(true); setAssignError('');
-    try {
-      const res = await fetch(`/api/drivers/${assignDriver.id}/assignments`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(assignForm),
-      });
-      const data = await res.json();
-      if (!res.ok) { setAssignError(typeof data.error === 'string' ? data.error : 'Failed to assign'); return; }
-      const fresh = await fetch('/api/drivers').then((r) => r.json());
-      setDrivers(fresh);
-      setAssignDriver(null);
-    } catch { setAssignError('Network error'); }
-    finally { setSavingAssign(false); }
   }
 
   const filterLabels: { key: Filter; label: string }[] = [
@@ -188,11 +198,6 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button size="sm" variant="ghost" onClick={() => openEdit(d)}>Edit</Button>
-                          {d.isActive && (
-                            <Button size="sm" variant="ghost" onClick={() => openAssign(d)} className="text-indigo-600 hover:bg-indigo-50">
-                              Assign Vehicle
-                            </Button>
-                          )}
                           <Button size="sm" variant="ghost" onClick={() => toggleActive(d)}
                             className={d.isActive ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}>
                             {d.isActive ? 'Deactivate' : 'Reactivate'}
@@ -225,47 +230,38 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
           <Input label="Start Date" type="date"
             value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
           />
+
+          {/* Vehicle assignment — optional. If provided, creates/replaces the driver's current assignment. */}
+          <div className="pt-3 mt-2 border-t border-gray-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">
+              Vehicle Assignment <span className="font-normal normal-case tracking-normal text-gray-400">(optional)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Cab Number" placeholder="e.g. 30"
+                value={form.vehicleNumber}
+                onChange={(e) => setForm((f) => ({ ...f, vehicleNumber: e.target.value }))}
+              />
+              <Select label="Shift"
+                value={form.shift}
+                onChange={(e) => setForm((f) => ({ ...f, shift: e.target.value as any }))}
+              >
+                <option value="MORNING">Morning (5am – 5pm)</option>
+                <option value="EVENING">Evening (5pm – 5am)</option>
+              </Select>
+            </div>
+            {modal === 'edit' && editing?.assignments[0] && (
+              <p className="mt-2 text-xs text-gray-500">
+                Current: #{editing.assignments[0].vehicleNumber} · {editing.assignments[0].shift === 'MORNING' ? 'Morning' : 'Evening'}.
+                Changing this ends the old assignment and starts a new one.
+              </p>
+            )}
+          </div>
+
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>
             <Button variant="primary" onClick={save} disabled={saving || !form.name || !form.startDate}>
               {saving ? 'Saving…' : modal === 'edit' ? 'Save Changes' : 'Add Driver'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Assign Vehicle Modal */}
-      <Modal open={assignDriver !== null} onClose={() => setAssignDriver(null)}
-        title={`Assign Vehicle — ${assignDriver?.name ?? ''}`}>
-        <div className="space-y-4">
-          <p className="text-sm text-gray-500">
-            Assigning a new vehicle ends {assignDriver?.name}&apos;s current assignment automatically.
-            If another driver is on this vehicle+shift, their assignment also ends.
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Cab Number" placeholder="e.g. 30"
-              value={assignForm.vehicleNumber}
-              onChange={(e) => setAssignForm((f) => ({ ...f, vehicleNumber: e.target.value }))}
-            />
-            <Select label="Shift"
-              value={assignForm.shift}
-              onChange={(e) => setAssignForm((f) => ({ ...f, shift: e.target.value as any }))}
-            >
-              <option value="MORNING">Morning (5am – 5pm)</option>
-              <option value="EVENING">Evening (5pm – 5am)</option>
-            </Select>
-          </div>
-          <Input label="Start Date" type="date"
-            value={assignForm.startDate}
-            onChange={(e) => setAssignForm((f) => ({ ...f, startDate: e.target.value }))}
-          />
-          {assignError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{assignError}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setAssignDriver(null)}>Cancel</Button>
-            <Button variant="primary" onClick={saveAssignment}
-              disabled={savingAssign || !assignForm.vehicleNumber || !assignForm.startDate}>
-              {savingAssign ? 'Assigning…' : 'Confirm Assignment'}
             </Button>
           </div>
         </div>
