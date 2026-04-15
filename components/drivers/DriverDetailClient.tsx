@@ -42,7 +42,7 @@ const EMPTY_SHEET = {
   vehicleNumber:         '',
   grossEarnings:         '',
   gasDeduction:          '',
-  debitFee:              '',
+  debitFee:              '1',      // default per-transaction fee — editable if different
   debitTransactionCount: '',
   callChargeDeduction:   '',
   extraExpenseDeduction: '',
