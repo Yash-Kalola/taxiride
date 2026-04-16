@@ -42,15 +42,13 @@ const EMPTY_SHEET = {
   vehicleNumber:         '',
   grossEarnings:         '',
   gasDeduction:          '',
-  debitFee:              '1',      // default per-transaction fee — editable if different
-  debitTransactionCount: '',
+  debitFee:              '',       // single settlement amount from the terminal receipt
   callChargeDeduction:   '',
   extraExpenseDeduction: '',
   extraExpenseNote:      '',
 };
 
 function parseNum(v: string): number { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
-function parseInt0(v: string): number { const n = parseInt(v); return Number.isFinite(n) ? n : 0; }
 
 export default function DriverDetailClient({ initialDriver }: { initialDriver: Driver }) {
   const [driver,    setDriver]    = useState<Driver>(initialDriver);
@@ -110,7 +108,7 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
       grossEarnings:         parseNum(sheetForm.grossEarnings),
       gasDeduction:          parseNum(sheetForm.gasDeduction),
       debitFee:              parseNum(sheetForm.debitFee),
-      debitTransactionCount: parseInt0(sheetForm.debitTransactionCount),
+      debitTransactionCount: 0, // legacy — unused by the calc
       callChargeDeduction:   parseNum(sheetForm.callChargeDeduction),
       extraExpenseDeduction: parseNum(sheetForm.extraExpenseDeduction),
     });
@@ -140,7 +138,6 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
       grossEarnings:         String(s.grossEarnings),
       gasDeduction:          String(s.gasDeduction),
       debitFee:              String(s.debitFee),
-      debitTransactionCount: String(s.debitTransactionCount),
       callChargeDeduction:   String(s.callChargeDeduction),
       extraExpenseDeduction: String(s.extraExpenseDeduction),
       extraExpenseNote:      s.extraExpenseNote,
@@ -158,7 +155,7 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
         grossEarnings:         parseNum(sheetForm.grossEarnings),
         gasDeduction:          parseNum(sheetForm.gasDeduction),
         debitFee:              parseNum(sheetForm.debitFee),
-        debitTransactionCount: parseInt0(sheetForm.debitTransactionCount),
+        debitTransactionCount: 0, // legacy — field is no longer surfaced in the UI
         callChargeDeduction:   parseNum(sheetForm.callChargeDeduction),
         extraExpenseDeduction: parseNum(sheetForm.extraExpenseDeduction),
         extraExpenseNote:      sheetForm.extraExpenseNote,
@@ -312,7 +309,7 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
                       {formatCurrency(s.netDriverPay)}
                     </td>
                     <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-slate-700' : 'text-red-600'}`}
-                        title={`60% − debit ${formatCurrency(s.debitFee * s.debitTransactionCount)} − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
+                        title={`60% − debit ${formatCurrency(s.debitFee)} − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
                       {formatCurrency(s.companyNet ?? 0)}
                     </td>
                     <td className="px-3 py-3">
@@ -418,19 +415,10 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
             onChange={(e) => setSheetForm((f) => ({ ...f, grossEarnings: e.target.value }))}
             hint="Total take — this is the 100%"
           />
-          <Input label="Debit Txn Count" type="number" min={0} step={1} placeholder="0"
-            value={sheetForm.debitTransactionCount}
-            onChange={(e) => setSheetForm((f) => ({ ...f, debitTransactionCount: e.target.value }))}
-            hint="# of debit transactions (fees come from company's 60%)"
-          />
-          <Input label="Debit Fee per Txn ($)" type="number" min={0} step={0.01} placeholder="1.00"
+          <Input label="Debit Amount ($)" type="number" min={0} step={0.01} placeholder="0.00"
             value={sheetForm.debitFee}
             onChange={(e) => setSheetForm((f) => ({ ...f, debitFee: e.target.value }))}
-            hint={
-              (parseInt0(sheetForm.debitTransactionCount) > 0 && parseNum(sheetForm.debitFee) > 0)
-                ? `Total fees: ${formatCurrency(parseNum(sheetForm.debitFee) * parseInt0(sheetForm.debitTransactionCount))} (from 60%)`
-                : undefined
-            }
+            hint="Settlement total from the terminal receipt — subtracted from the company's 60%"
           />
           <Input label="Gas ($)" type="number" min={0} step={0.01} placeholder="0.00"
             value={sheetForm.gasDeduction}
