@@ -3,15 +3,15 @@
  *
  * Business rules:
  *   1. The driver enters gross earnings for their shift (this is the "100%").
- *   2. Debit transaction fees come OFF THE TOP:
+ *   2. The gross is split straight 40 / 60:
+ *        driverPay    = gross × 40%            (driver's take-home — never reduced by fees)
+ *        companyShare = gross × 60%            (company's share before expenses)
+ *   3. Debit processing fees are a COMPANY cost, deducted from the 60%:
  *        debitFeeTotal = debitFee × debitTransactionCount
- *        adjustedGross = gross − debitFeeTotal          (this is the new "100%")
- *   3. The adjustedGross is split:
- *        driverPay    = adjustedGross × 40%            (driver's take-home — always clean)
- *        companyShare = adjustedGross × 60%            (company's share before expenses)
- *   4. Company-side expenses (gas, call charges, extra) come out of the company's 60%:
- *        companyNet   = companyShare − gas − callCharge − extra
- *      The driver's 40% is never reduced by these expenses.
+ *   4. Other company-side expenses (gas, call charges, extra) also come
+ *      out of the company's 60%:
+ *        companyNet = companyShare − debitFeeTotal − gas − callCharge − extra
+ *      The driver's 40% is never reduced by any expenses or fees.
  *   5. Payout period comes from day-of-month:
  *        day 1–10   = period 1
  *        day 11–20  = period 2
@@ -32,15 +32,14 @@ export interface PayInputs {
 
 export interface PayBreakdown {
   gross: number;           // what the driver entered (100%)
-  debitFeeTotal: number;   // debitFee × count (subtracted off the top)
-  adjustedGross: number;   // gross − debitFeeTotal (the new 100%)
-  driverPay: number;       // adjustedGross × 40% — driver's take-home
-  companyShare: number;    // adjustedGross × 60% — company share before expenses
+  debitFeeTotal: number;   // debitFee × count (company cost, deducted from 60%)
+  driverPay: number;       // gross × 40% — driver's take-home (unaffected by fees)
+  companyShare: number;    // gross × 60% — company share before expenses
   gas: number;
   callCharge: number;
   extra: number;
-  companyExpenses: number; // gas + call + extra
-  companyNet: number;      // companyShare − companyExpenses (can be negative if expenses > share)
+  companyExpenses: number; // debitFeeTotal + gas + call + extra (everything from the 60%)
+  companyNet: number;      // companyShare − companyExpenses (can be negative)
 }
 
 function safe(v: number): number {
@@ -57,25 +56,24 @@ export function computePayBreakdown(inputs: PayInputs): PayBreakdown {
   const extra        = safe(inputs.extraExpenseDeduction);
 
   const debitFeeTotal   = debitFee * debitCount;
-  const adjustedGross   = gross - debitFeeTotal;
-  const driverPay       = adjustedGross * DRIVER_SHARE_RATE;
-  const companyShare    = adjustedGross * COMPANY_SHARE_RATE;
-  const companyExpenses = gas + callCharge + extra;
+  const driverPay       = gross * DRIVER_SHARE_RATE;
+  const companyShare    = gross * COMPANY_SHARE_RATE;
+  const companyExpenses = debitFeeTotal + gas + callCharge + extra;
   const companyNet      = companyShare - companyExpenses;
 
   return {
-    gross, debitFeeTotal, adjustedGross,
+    gross, debitFeeTotal,
     driverPay, companyShare,
     gas, callCharge, extra, companyExpenses, companyNet,
   };
 }
 
-/** Driver take-home (40% of adjusted gross). */
+/** Driver take-home (40% of gross — unaffected by debit fees or expenses). */
 export function computeNetDriverPay(inputs: PayInputs): number {
   return computePayBreakdown(inputs).driverPay;
 }
 
-/** Company net from this sheet (60% of adjusted, minus company expenses). */
+/** Company net from this sheet (60% of gross, minus debit fees and expenses). */
 export function computeCompanyNet(inputs: PayInputs): number {
   return computePayBreakdown(inputs).companyNet;
 }

@@ -64,9 +64,9 @@ export async function POST(request: NextRequest) {
 
     const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
     const totalNetPay     = sheets.reduce((s, x) => s + x.netDriverPay, 0);
-    // Under the new 40/60 model, "deductions from gross to reach driver pay" =
-    //   debit fees (off-the-top) + company's 60% share.
-    // Equivalent to: totalGross - totalNetPay. Gas/call/extra are company-side, not driver deductions.
+    // totalDeductions = totalGross - totalNetPay (= the company's 60%).
+    // Driver pay is always gross × 40%; debit fees and other expenses are
+    // company costs and don't reduce the driver's take.
     const totalDeductions = totalGross - totalNetPay;
 
     // Upsert on unique (driverId, payoutPeriod, month, year)

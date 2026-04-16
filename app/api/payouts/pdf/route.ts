@@ -48,23 +48,14 @@ export async function GET(request: NextRequest) {
         shift:                 s.shift as 'MORNING' | 'EVENING',
         vehicleNumber:         s.vehicleNumber,
         grossEarnings:         s.grossEarnings,
-        debitFee:              s.debitFee,
-        debitTransactionCount: s.debitTransactionCount,
-        hoursWorked:           s.hoursWorked,
         netDriverPay:          s.netDriverPay,
       }));
-      const totalHours     = sheetsRaw.reduce((sum, s) => sum + s.hoursWorked, 0);
-      const totalDebitFees = sheetsRaw.reduce((sum, s) => sum + s.debitFee * s.debitTransactionCount, 0);
-      const totalAdjusted  = p.totalGross - totalDebitFees;
       return {
         driverName:     p.driver.name,
         driverPhone:    p.driver.phone || undefined,
         sheets,
         totalGross:     p.totalGross,
-        totalDebitFees,
-        totalAdjusted,
         totalNetPay:    p.totalNetPay,
-        totalHours,
       };
     });
 

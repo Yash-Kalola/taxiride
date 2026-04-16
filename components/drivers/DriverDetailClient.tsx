@@ -9,7 +9,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency } from '@/lib/tax';
-import { computePayBreakdown, computeProductivity, formatPeriodLabel } from '@/lib/driver-pay';
+import { computePayBreakdown, formatPeriodLabel } from '@/lib/driver-pay';
 import { MONTHS } from '@/lib/constants';
 
 interface Assignment {
@@ -47,7 +47,6 @@ const EMPTY_SHEET = {
   callChargeDeduction:   '',
   extraExpenseDeduction: '',
   extraExpenseNote:      '',
-  hoursWorked:           '',
 };
 
 function parseNum(v: string): number { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
@@ -88,9 +87,7 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
     const gross       = sheetsInMonth.reduce((s, x) => s + x.grossEarnings, 0);
     const driverPay   = sheetsInMonth.reduce((s, x) => s + x.netDriverPay, 0);
     const companyNet  = sheetsInMonth.reduce((s, x) => s + (x.companyNet ?? 0), 0);
-    const hours       = sheetsInMonth.reduce((s, x) => s + x.hoursWorked, 0);
-    const productivity = computeProductivity(driverPay, hours);
-    return { gross, driverPay, companyNet, hours, productivity };
+    return { gross, driverPay, companyNet };
   }, [sheetsInMonth]);
 
   // 10-day periods (3 cards for this month)
@@ -147,7 +144,6 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
       callChargeDeduction:   String(s.callChargeDeduction),
       extraExpenseDeduction: String(s.extraExpenseDeduction),
       extraExpenseNote:      s.extraExpenseNote,
-      hoursWorked:           String(s.hoursWorked),
     });
     setEditingSheet(s); setSheetError(''); setSheetModal('edit');
   }
@@ -166,7 +162,6 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
         callChargeDeduction:   parseNum(sheetForm.callChargeDeduction),
         extraExpenseDeduction: parseNum(sheetForm.extraExpenseDeduction),
         extraExpenseNote:      sheetForm.extraExpenseNote,
-        hoursWorked:           parseNum(sheetForm.hoursWorked),
       };
       const url    = sheetModal === 'edit' ? `/api/daily-sheets/${editingSheet!.id}` : `/api/drivers/${driver.id}/daily-sheets`;
       const method = sheetModal === 'edit' ? 'PUT' : 'POST';
@@ -290,10 +285,6 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
         <SummaryCard label="Gross Earned"     value={formatCurrency(summary.gross)} tone="indigo" />
         <SummaryCard label="Driver Pay (40%)" value={formatCurrency(summary.driverPay)} tone="emerald" />
         <SummaryCard label="Company Net (60% − expenses)" value={formatCurrency(summary.companyNet)} tone={summary.companyNet >= 0 ? 'slate' : 'amber'} small />
-        <SummaryCard label="Hours Worked"     value={`${summary.hours.toFixed(1)} hrs`} tone="slate" />
-        <SummaryCard label="Productivity"
-          value={summary.productivity === null ? '—' : `${formatCurrency(summary.productivity)}/hr`}
-          tone="indigo" small />
       </div>
 
       {/* Daily sheets table */}
@@ -302,37 +293,28 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Date', 'Shift', 'Cab', 'Gross', 'Debit Fees', 'Adjusted', 'Driver (40%)', 'Co. Net', 'Hrs', 'Paid', ''].map((h) => (
+                {['Date', 'Shift', 'Cab', 'Gross', 'Driver (40%)', 'Co. Net', 'Paid', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {sheetsInMonth.length === 0 ? (
-                <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-gray-400">No daily sheets for {MONTHS[viewMonth - 1]} {viewYear}.</td></tr>
+                <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-400">No daily sheets for {MONTHS[viewMonth - 1]} {viewYear}.</td></tr>
               ) : sheetsInMonth.map((s) => {
-                const debitTotal = s.debitFee * s.debitTransactionCount;
-                const adjusted   = s.grossEarnings - debitTotal;
                 return (
                   <tr key={s.id} className="group hover:bg-gray-50">
                     <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{format(new Date(s.date), 'MMM d')}</td>
                     <td className="px-3 py-3"><Badge variant={s.shift === 'MORNING' ? 'morning' : 'evening'} /></td>
                     <td className="px-3 py-3 font-mono font-bold text-gray-900">#{s.vehicleNumber}</td>
                     <td className="px-3 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(s.grossEarnings)}</td>
-                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
-                      {debitTotal > 0
-                        ? <span title={`${s.debitTransactionCount} × ${formatCurrency(s.debitFee)}`}>−{formatCurrency(debitTotal)}</span>
-                        : '—'}
-                    </td>
-                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrency(adjusted)}</td>
                     <td className="px-3 py-3 font-semibold text-emerald-600 whitespace-nowrap">
                       {formatCurrency(s.netDriverPay)}
                     </td>
                     <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-slate-700' : 'text-red-600'}`}
-                        title={`60% share − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
+                        title={`60% − debit ${formatCurrency(s.debitFee * s.debitTransactionCount)} − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
                       {formatCurrency(s.companyNet ?? 0)}
                     </td>
-                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{s.hoursWorked.toFixed(1)}</td>
                     <td className="px-3 py-3">
                       <button onClick={() => togglePaid(s)} className="cursor-pointer">
                         <Badge variant={s.isPaid ? 'paid' : 'pending'} />
@@ -431,10 +413,6 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
             value={sheetForm.vehicleNumber}
             onChange={(e) => setSheetForm((f) => ({ ...f, vehicleNumber: e.target.value }))}
           />
-          <Input label="Hours Worked" type="number" min={0} step={0.25} placeholder="12"
-            value={sheetForm.hoursWorked}
-            onChange={(e) => setSheetForm((f) => ({ ...f, hoursWorked: e.target.value }))}
-          />
           <Input label="Gross Earnings ($)" type="number" min={0} step={0.01} placeholder="0.00"
             value={sheetForm.grossEarnings}
             onChange={(e) => setSheetForm((f) => ({ ...f, grossEarnings: e.target.value }))}
@@ -443,14 +421,14 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <Input label="Debit Txn Count" type="number" min={0} step={1} placeholder="0"
             value={sheetForm.debitTransactionCount}
             onChange={(e) => setSheetForm((f) => ({ ...f, debitTransactionCount: e.target.value }))}
-            hint="# of debit transactions (fees come off the top)"
+            hint="# of debit transactions (fees come from company's 60%)"
           />
           <Input label="Debit Fee per Txn ($)" type="number" min={0} step={0.01} placeholder="1.00"
             value={sheetForm.debitFee}
             onChange={(e) => setSheetForm((f) => ({ ...f, debitFee: e.target.value }))}
             hint={
               (parseInt0(sheetForm.debitTransactionCount) > 0 && parseNum(sheetForm.debitFee) > 0)
-                ? `Total off the top: ${formatCurrency(parseNum(sheetForm.debitFee) * parseInt0(sheetForm.debitTransactionCount))}`
+                ? `Total fees: ${formatCurrency(parseNum(sheetForm.debitFee) * parseInt0(sheetForm.debitTransactionCount))} (from 60%)`
                 : undefined
             }
           />
@@ -484,21 +462,8 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
             <span className="text-gray-600">Gross (100%)</span>
             <span className="text-right text-gray-900 font-medium">{formatCurrency(sheetPreview.gross)}</span>
 
-            <span className="text-gray-600">
-              Debit fees
-              {sheetPreview.debitFeeTotal > 0 && (
-                <span className="text-xs text-gray-400 ml-1">
-                  ({parseInt0(sheetForm.debitTransactionCount)} × {formatCurrency(parseNum(sheetForm.debitFee))})
-                </span>
-              )}
-            </span>
-            <span className="text-right text-amber-700 font-medium">−{formatCurrency(sheetPreview.debitFeeTotal)}</span>
-
-            <span className="text-gray-700 font-semibold border-t border-indigo-200 pt-1.5">Adjusted (new 100%)</span>
-            <span className="text-right text-gray-900 font-bold border-t border-indigo-200 pt-1.5">{formatCurrency(sheetPreview.adjustedGross)}</span>
-
-            <span className="text-emerald-700 font-semibold mt-2">Driver pay (40%)</span>
-            <span className="text-right text-emerald-600 font-bold text-lg mt-2">{formatCurrency(sheetPreview.driverPay)}</span>
+            <span className="text-emerald-700 font-semibold border-t border-indigo-200 pt-1.5 mt-1">Driver pay (40%)</span>
+            <span className="text-right text-emerald-600 font-bold text-lg border-t border-indigo-200 pt-1.5 mt-1">{formatCurrency(sheetPreview.driverPay)}</span>
 
             <span className="text-gray-500 text-xs mt-2">Company share (60%)</span>
             <span className="text-right text-gray-600 text-xs mt-2">{formatCurrency(sheetPreview.companyShare)}</span>
@@ -506,9 +471,10 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
             {sheetPreview.companyExpenses > 0 && (
               <>
                 <span className="text-gray-500 text-xs">
-                  − Gas {formatCurrency(sheetPreview.gas)}
-                  {sheetPreview.callCharge > 0 && <> · Call {formatCurrency(sheetPreview.callCharge)}</>}
-                  {sheetPreview.extra > 0      && <> · Extra {formatCurrency(sheetPreview.extra)}</>}
+                  {sheetPreview.debitFeeTotal > 0 && <>− Debit {formatCurrency(sheetPreview.debitFeeTotal)} </>}
+                  {sheetPreview.gas > 0            && <>− Gas {formatCurrency(sheetPreview.gas)} </>}
+                  {sheetPreview.callCharge > 0     && <>− Call {formatCurrency(sheetPreview.callCharge)} </>}
+                  {sheetPreview.extra > 0          && <>− Extra {formatCurrency(sheetPreview.extra)}</>}
                 </span>
                 <span className="text-right text-amber-700 text-xs">−{formatCurrency(sheetPreview.companyExpenses)}</span>
               </>

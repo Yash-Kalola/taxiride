@@ -48,10 +48,7 @@ const s = StyleSheet.create({
   cDate:     { width: 52, fontSize: 8 },
   cShift:    { width: 42, fontSize: 8 },
   cVehicle:  { width: 42, fontSize: 8, textAlign: 'center' },
-  cGross:    { width: 70, fontSize: 8, textAlign: 'right' },
-  cDebit:    { width: 62, fontSize: 8, textAlign: 'right', color: '#92400E' },
-  cAdjusted: { width: 70, fontSize: 8, textAlign: 'right' },
-  cHours:    { width: 40, fontSize: 8, textAlign: 'right', color: '#6B7280' },
+  cGross:    { width: 80, fontSize: 8, textAlign: 'right' },
   cDriver:   { flex: 1,   fontSize: 8, textAlign: 'right', fontFamily: 'Helvetica-Bold' },
 
   // Per-driver summary
@@ -79,10 +76,7 @@ export interface PayoutSheet {
   shift: 'MORNING' | 'EVENING';
   vehicleNumber: string;
   grossEarnings: number;
-  debitFee: number;
-  debitTransactionCount: number;
-  hoursWorked: number;
-  netDriverPay: number;      // 40% of adjusted gross
+  netDriverPay: number;      // gross × 40%
 }
 
 export interface PayoutDriverData {
@@ -90,10 +84,7 @@ export interface PayoutDriverData {
   driverPhone?: string;
   sheets: PayoutSheet[];
   totalGross: number;
-  totalDebitFees: number;    // sum of (debitFee × count)
-  totalAdjusted: number;     // totalGross − totalDebitFees
   totalNetPay: number;       // sum of driver 40%
-  totalHours: number;
 }
 
 function PayoutFooter() {
@@ -119,11 +110,11 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
           <Text style={s.driverName}>{data.driverName}</Text>
           {data.driverPhone ? <Text style={s.driverMeta}>{data.driverPhone}</Text> : null}
         </View>
-        <Text style={s.driverMeta}>{data.sheets.length} sheet{data.sheets.length !== 1 ? 's' : ''} · {data.totalHours.toFixed(1)} hrs</Text>
+        <Text style={s.driverMeta}>{data.sheets.length} sheet{data.sheets.length !== 1 ? 's' : ''}</Text>
       </View>
 
       <Text style={s.formulaStrip}>
-        Driver pay = (Gross − Debit fees) × 40%
+        Driver pay = Gross × 40%
       </Text>
 
       <View style={s.tableHeader}>
@@ -131,10 +122,7 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
         <Text style={[s.colHdr, s.cShift]}>Shift</Text>
         <Text style={[s.colHdr, s.cVehicle]}>Cab</Text>
         <Text style={[s.colHdr, s.cGross]}>Gross</Text>
-        <Text style={[s.colHdr, s.cDebit]}>Debit Fees</Text>
-        <Text style={[s.colHdr, s.cAdjusted]}>Adjusted</Text>
-        <Text style={[s.colHdr, s.cHours]}>Hrs</Text>
-        <Text style={[s.colHdr, s.cDriver]}>Driver Pay</Text>
+        <Text style={[s.colHdr, s.cDriver]}>Driver Pay (40%)</Text>
       </View>
 
       {data.sheets.length === 0 ? (
@@ -142,19 +130,12 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
           <Text style={s.emptyText}>No daily sheets recorded for this period</Text>
         </View>
       ) : data.sheets.map((row, i) => {
-        const debitTotal = row.debitFee * row.debitTransactionCount;
-        const adjusted   = row.grossEarnings - debitTotal;
         return (
           <View key={i} style={s.tableRow} wrap={false}>
             <Text style={s.cDate}>{fmtDate(row.date)}</Text>
             <Text style={s.cShift}>{row.shift === 'MORNING' ? 'AM' : 'PM'}</Text>
             <Text style={s.cVehicle}>#{row.vehicleNumber}</Text>
             <Text style={s.cGross}>{fmt(row.grossEarnings)}</Text>
-            <Text style={s.cDebit}>
-              {debitTotal > 0 ? `−${fmt(debitTotal)}` : '—'}
-            </Text>
-            <Text style={s.cAdjusted}>{fmt(adjusted)}</Text>
-            <Text style={s.cHours}>{row.hoursWorked.toFixed(1)}</Text>
             <Text style={[s.cDriver, { color: row.netDriverPay < 0 ? '#DC2626' : '#047857' }]}>
               {fmt(row.netDriverPay)}
             </Text>
@@ -168,11 +149,6 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
         <Text style={s.cShift} />
         <Text style={s.cVehicle} />
         <Text style={[s.summaryVal, s.cGross]}>{fmt(data.totalGross)}</Text>
-        <Text style={[s.summaryVal, s.cDebit]}>
-          {data.totalDebitFees > 0 ? `−${fmt(data.totalDebitFees)}` : '—'}
-        </Text>
-        <Text style={[s.summaryVal, s.cAdjusted]}>{fmt(data.totalAdjusted)}</Text>
-        <Text style={[s.summaryVal, s.cHours]}>{data.totalHours.toFixed(1)}</Text>
         <Text style={[s.summaryVal, s.cDriver, { color: data.totalNetPay < 0 ? '#DC2626' : '#3730A3' }]}>
           {fmt(data.totalNetPay)}
         </Text>

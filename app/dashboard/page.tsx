@@ -67,7 +67,7 @@ export default async function DashboardPage() {
         pnl.companyNet   += s.companyNet;
       }
       pnl.expenses     = pnl.gas + pnl.call + pnl.extra;
-      pnl.companyShare = pnl.companyNet + pnl.expenses; // = adjustedGross × 60%
+      pnl.companyShare = pnl.companyNet + pnl.expenses; // = gross × 60% − debit fees
       pnl.sheetCount   = sheets.length;
       pnl.carCount     = companyCabNumbers.length;
     }

@@ -63,8 +63,7 @@ export default function DailySheetsClient({
   const totals = useMemo(() => {
     const gross = sheets.reduce((s, x) => s + x.grossEarnings, 0);
     const net   = sheets.reduce((s, x) => s + x.netDriverPay, 0);
-    const hours = sheets.reduce((s, x) => s + x.hoursWorked, 0);
-    return { gross, net, hours };
+    return { gross, net };
   }, [sheets]);
 
   function toggleSelect(id: string) {
@@ -174,7 +173,7 @@ export default function DailySheetsClient({
                       className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                   </th>
-                  {['Date', 'Driver', 'Cab', 'Shift', 'Gross', 'Net Pay', 'Hrs', 'Paid', ''].map((h) => (
+                  {['Date', 'Driver', 'Cab', 'Shift', 'Gross', 'Net Pay', 'Paid', ''].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -201,7 +200,6 @@ export default function DailySheetsClient({
                     <td className={`px-3 py-3 font-semibold whitespace-nowrap ${s.netDriverPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {formatCurrency(s.netDriverPay)}
                     </td>
-                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{s.hoursWorked.toFixed(1)}</td>
                     <td className="px-3 py-3"><Badge variant={s.isPaid ? 'paid' : 'pending'} /></td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -225,7 +223,6 @@ export default function DailySheetsClient({
                   <td className={`px-3 py-3 font-bold whitespace-nowrap ${totals.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCurrency(totals.net)}
                   </td>
-                  <td className="px-3 py-3 font-bold text-gray-700 whitespace-nowrap">{totals.hours.toFixed(1)}</td>
                   <td className="px-3 py-3" colSpan={2} />
                 </tr>
               </tfoot>

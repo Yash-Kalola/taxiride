@@ -8,11 +8,10 @@ import { COMPANY_SHARE_RATE } from '@/lib/driver-pay';
  * spreadsheet: Total / 60% share / Gas / Debit / Charges / Extra / Company Net.
  *
  * Formula (see lib/driver-pay.ts):
- *   debitFeeTotal   = debitFee × count                 — off the top (100%)
- *   adjustedGross   = gross − debitFeeTotal
- *   companyShare    = adjustedGross × 60%
- *   companyNet      = companyShare − gas − callCharge − extra
- *   driverPay (40%) = adjustedGross × 40%              — view only, not P&L
+ *   companyShare    = gross × 60%
+ *   debitFeeTotal   = debitFee × count                 — company cost (from 60%)
+ *   companyNet      = companyShare − debitFees − gas − callCharge − extra
+ *   driverPay (40%) = gross × 40%                      — unaffected by fees
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -35,10 +34,9 @@ export async function GET(request: NextRequest) {
       const totalGas         = d.dailySheets.reduce((s, ds) => s + ds.gasDeduction,          0);
       const totalCallCharge  = d.dailySheets.reduce((s, ds) => s + ds.callChargeDeduction,   0);
       const totalExtra       = d.dailySheets.reduce((s, ds) => s + ds.extraExpenseDeduction, 0);
-      // Derive 60% share and company net from the stored companyNet to avoid
-      // rounding drift — companyNet is already (adjusted × 0.6) − gas − call − extra.
+      // Use stored companyNet to avoid rounding drift.
       const totalCompanyNet  = d.dailySheets.reduce((s, ds) => s + (ds.companyNet ?? 0),     0);
-      const totalCompanyShare = (totalGross - totalDebitFees) * COMPANY_SHARE_RATE;
+      const totalCompanyShare = totalGross * COMPANY_SHARE_RATE;
       const sheetCount       = d.dailySheets.length;
 
       return {
