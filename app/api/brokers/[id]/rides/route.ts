@@ -21,7 +21,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const monthParam = url.searchParams.get('month');
     const year       = url.searchParams.get('year');
 
-    const where: any = { vehicleNumber: { in: cabNumbers }, voided: false };
+    // Include voided rides so the broker can see historically what was
+    // voided (parity with the invoice detail page). The client renders them
+    // with strikethrough / VOID label and excludes them from the amount total.
+    const where: any = { vehicleNumber: { in: cabNumbers } };
 
     // Ride.month stores full month names ("January", "April", etc.)
     // Query param comes as a number (1-12), so convert to month name
@@ -37,7 +40,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       where,
       orderBy: { dateTime: 'desc' },
       select: {
-        id: true, vehicleNumber: true, dateTime: true, amount: true,
+        id: true, vehicleNumber: true, dateTime: true, amount: true, voided: true,
         passenger: true, pickupLocation: true, dropoffLocation: true,
       },
     });

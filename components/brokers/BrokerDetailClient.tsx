@@ -24,7 +24,7 @@ interface Transaction {
 interface BrokerVehicle { id: string; cabNumber: string; isCompanyCar: boolean; insuranceAmount: number; isActive: boolean; }
 interface BrokerExpense { id: string; cabNumber: string; date: string; amount: number; note: string; paid: boolean; }
 interface RecurringCharge { id: string; type: string; amount: number; description: string; dayOfMonth: number; isActive: boolean; }
-interface BrokerRide { id: string; vehicleNumber: string; dateTime: string; amount: number; passenger: string; pickupLocation: string; dropoffLocation: string; }
+interface BrokerRide { id: string; vehicleNumber: string; dateTime: string; amount: number; passenger: string; pickupLocation: string; dropoffLocation: string; voided: boolean; }
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
@@ -717,7 +717,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
           { label: 'We Owe Them',           value: weOweThem,          color: 'text-amber-600'  },
           { label: `Collected (${MONTHS[viewMonth - 1]})`, value: collectedThisMonth, color: 'text-emerald-600'},
           { label: `Paid Out (${MONTHS[viewMonth - 1]})`,  value: paidOutThisMonth,   color: 'text-rose-600'   },
-          { label: `Rides (${MONTHS[viewMonth - 1]})`,     value: brokerRides.reduce((s, r) => s + r.amount, 0), color: 'text-blue-600', sub: brokerRides.length > 0 ? `${brokerRides.length} rides` : undefined },
+          { label: `Rides (${MONTHS[viewMonth - 1]})`,     value: brokerRides.filter((r) => !r.voided).reduce((s, r) => s + r.amount, 0), color: 'text-blue-600', sub: brokerRides.length > 0 ? `${brokerRides.filter((r) => !r.voided).length} rides${brokerRides.some((r) => r.voided) ? ` · ${brokerRides.filter((r) => r.voided).length} voided` : ''}` : undefined },
         ].map((c) => (
           <div key={c.label} className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-gray-200">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{c.label}</p>
@@ -934,7 +934,15 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             Rides ({MONTHS[viewMonth - 1]} {viewYear})
-            {brokerRides.length > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{brokerRides.length} rides · {formatCurrency(brokerRides.reduce((s, r) => s + r.amount, 0))}</span>}
+            {brokerRides.length > 0 && (() => {
+              const active = brokerRides.filter((r) => !r.voided);
+              const voided = brokerRides.length - active.length;
+              return (
+                <span className="ml-2 text-sm font-normal text-gray-400">
+                  {active.length} active{voided > 0 ? `, ${voided} voided` : ''} · {formatCurrency(active.reduce((s, r) => s + r.amount, 0))}
+                </span>
+              );
+            })()}
           </h2>
         </div>
         {ridesLoading ? (
@@ -959,12 +967,15 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {brokerRides.map((ride) => (
-                  <tr key={ride.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3.5 text-sm text-gray-500 whitespace-nowrap">{ride.dateTime || '—'}</td>
-                    <td className="px-4 py-3.5 text-sm font-mono font-semibold text-gray-700">#{ride.vehicleNumber}</td>
-                    <td className="px-4 py-3.5 text-sm text-gray-600">{ride.pickupLocation || '—'}</td>
-                    <td className="px-4 py-3.5 text-sm text-gray-600">{ride.dropoffLocation || '—'}</td>
-                    <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(ride.amount)}</td>
+                  <tr key={ride.id} className={`transition-colors ${ride.voided ? 'bg-red-50/40 opacity-60' : 'hover:bg-gray-50'}`}>
+                    <td className={`px-4 py-3.5 text-sm whitespace-nowrap ${ride.voided ? 'text-gray-500 line-through' : 'text-gray-500'}`}>{ride.dateTime || '—'}</td>
+                    <td className={`px-4 py-3.5 text-sm font-mono font-semibold ${ride.voided ? 'text-gray-500 line-through' : 'text-gray-700'}`}>#{ride.vehicleNumber}</td>
+                    <td className={`px-4 py-3.5 text-sm text-gray-600 ${ride.voided ? 'line-through' : ''}`}>{ride.pickupLocation || '—'}</td>
+                    <td className={`px-4 py-3.5 text-sm text-gray-600 ${ride.voided ? 'line-through' : ''}`}>{ride.dropoffLocation || '—'}</td>
+                    <td className={`px-4 py-3.5 text-sm font-semibold ${ride.voided ? 'text-red-400 line-through' : 'text-gray-900'}`}>
+                      {ride.voided && <span className="mr-1.5 text-xs font-bold text-red-500 not-italic no-underline" style={{ textDecoration: 'none' }}>VOID</span>}
+                      {formatCurrency(ride.amount)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
