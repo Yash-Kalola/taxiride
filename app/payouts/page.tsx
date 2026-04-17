@@ -5,9 +5,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function PayoutsPage() {
   const today = new Date();
+  // Default to DRAFT (unpaid) payouts — paid records just clutter the view
+  // during normal operation. The user can flip the Status filter to see all.
   const [payoutsRaw, driversRaw] = await Promise.all([
     prisma.driverPayout.findMany({
-      where: { month: today.getMonth() + 1, year: today.getFullYear() },
+      where: { month: today.getMonth() + 1, year: today.getFullYear(), status: 'DRAFT' },
       orderBy: [{ payoutPeriod: 'asc' }, { createdAt: 'desc' }],
       include: { driver: { select: { id: true, name: true } } },
     }).catch(() => []),

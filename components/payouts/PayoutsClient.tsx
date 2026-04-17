@@ -31,7 +31,7 @@ export default function PayoutsClient({
   const [filterMonth,  setFilterMonth]  = useState(initialMonth);
   const [filterYear,   setFilterYear]   = useState(initialYear);
   const [filterPeriod, setFilterPeriod] = useState<string>(''); // '', '1', '2', '3'
-  const [filterStatus, setFilterStatus] = useState<string>(''); // '', 'DRAFT', 'PAID'
+  const [filterStatus, setFilterStatus] = useState<string>('DRAFT'); // default to unpaid; user can switch to '', 'PAID'
   const [filterDriver, setFilterDriver] = useState<string>('');
 
   async function refresh() {
