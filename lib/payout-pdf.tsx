@@ -114,15 +114,14 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
       </View>
 
       <Text style={s.formulaStrip}>
-        Driver pay per shift = Gross × 60% − debit − gas − call − extra.
-        Summed across the period. Negative = company pays driver; positive = driver pays company.
+        Negative total = company pays driver; positive = driver pays company.
       </Text>
 
+      {/* Gross intentionally omitted — drivers see only their own pay. */}
       <View style={s.tableHeader}>
         <Text style={[s.colHdr, s.cDate]}>Date</Text>
         <Text style={[s.colHdr, s.cShift]}>Shift</Text>
         <Text style={[s.colHdr, s.cVehicle]}>Cab</Text>
-        <Text style={[s.colHdr, s.cGross]}>Gross</Text>
         <Text style={[s.colHdr, s.cDriver]}>Driver Pay</Text>
       </View>
 
@@ -136,7 +135,6 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
             <Text style={s.cDate}>{fmtDate(row.date)}</Text>
             <Text style={s.cShift}>{row.shift === 'MORNING' ? 'AM' : 'PM'}</Text>
             <Text style={s.cVehicle}>#{row.vehicleNumber}</Text>
-            <Text style={s.cGross}>{fmt(row.grossEarnings)}</Text>
             <Text style={[s.cDriver, { color: row.netDriverPay < 0 ? '#DC2626' : '#047857' }]}>
               {fmt(row.netDriverPay)}
             </Text>
@@ -149,7 +147,6 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
         <Text style={[s.summaryLbl, s.cDate]}>Totals</Text>
         <Text style={s.cShift} />
         <Text style={s.cVehicle} />
-        <Text style={[s.summaryVal, s.cGross]}>{fmt(data.totalGross)}</Text>
         <Text style={[s.summaryVal, s.cDriver, { color: data.totalNetPay < 0 ? '#DC2626' : '#3730A3' }]}>
           {fmt(data.totalNetPay)}
         </Text>
@@ -170,7 +167,6 @@ function PayoutDoc({
   const periodLabel = formatPeriodLabel(period, month, year);
   const generated = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
   const grand = drivers.reduce((sum, d) => sum + d.totalNetPay, 0);
-  const grandGross = drivers.reduce((sum, d) => sum + d.totalGross, 0);
 
   return (
     <Document>
@@ -211,14 +207,11 @@ function PayoutDoc({
 
         {drivers.map((d, i) => <DriverBlock key={i} data={d} />)}
 
-        {/* Grand total only for multi-driver reports */}
+        {/* Grand total only for multi-driver reports. Gross omitted per
+            business rule — drivers shouldn't see aggregate gross. */}
         {drivers.length > 1 && (
           <View style={s.grandBox}>
             <View style={s.grandInner}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5, paddingHorizontal: 2 }}>
-                <Text style={{ fontSize: 9, color: '#6B7280' }}>Total Gross (all drivers)</Text>
-                <Text style={{ fontSize: 9, textAlign: 'right' }}>{formatCurrency(grandGross)}</Text>
-              </View>
               <View style={s.grandRow}>
                 <Text style={s.grandLbl}>Grand Total Driver Pay</Text>
                 <Text style={[s.grandVal, { color: grand < 0 ? '#FCA5A5' : '#ffffff' }]}>{formatCurrency(grand)}</Text>

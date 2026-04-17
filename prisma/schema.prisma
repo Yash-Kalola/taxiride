@@ -223,6 +223,40 @@ model ExpenseAttachment {
   createdAt DateTime     @default(now())
 }
 
+// Company-wide expenses — not tied to any broker. Things like office rent,
+// utilities, insurance, software subscriptions, advertising, etc.
+// Feeds the dashboard P&L once integrated.
+model CompanyExpense {
+  id          String                      @id @default(cuid())
+  date        DateTime
+  amount      Float
+  category    String                      @default("OTHER")  // e.g. "Rent", "Utilities", "Insurance", etc. Free-text with UI suggestions.
+  note        String                      @default("")
+  paid        Boolean                     @default(false)
+  paidDate    DateTime?
+  month       Int                         // derived from date, for month/year filtering
+  year        Int
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  attachments CompanyExpenseAttachment[]
+
+  @@index([month, year])
+  @@index([date])
+  @@index([category])
+}
+
+model CompanyExpenseAttachment {
+  id        String          @id @default(cuid())
+  expenseId String
+  expense   CompanyExpense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  label     String          @default("")
+  fileName  String
+  filePath  String
+  fileType  String          @default("")
+  fileSize  Int             @default(0)
+  createdAt DateTime        @default(now())
+}
+
 // ──────────────────────────────────────────────────────────────
 // Phase 3: Driver Management & Daily Sheets
 // ──────────────────────────────────────────────────────────────

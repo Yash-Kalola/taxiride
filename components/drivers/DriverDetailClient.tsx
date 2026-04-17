@@ -279,7 +279,17 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
             </Button>
           )}
         </div>
-        <Button variant="primary" onClick={openAddSheet} disabled={!driver.isActive}>+ Add Daily Sheet</Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => window.open(`/api/drivers/${driver.id}/report?month=${viewMonth}&year=${viewYear}`, '_blank')}
+            disabled={sheetsInMonth.length === 0}
+            title={sheetsInMonth.length === 0 ? 'No sheets to report this month' : `Download monthly report for ${MONTHS[viewMonth - 1]} ${viewYear}`}
+          >
+            Monthly Report
+          </Button>
+          <Button variant="primary" onClick={openAddSheet} disabled={!driver.isActive}>+ Add Daily Sheet</Button>
+        </div>
       </div>
 
       {/* Summary cards — driver pay is the settlement amount (60% − expenses)
