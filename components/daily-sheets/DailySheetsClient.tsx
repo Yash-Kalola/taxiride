@@ -61,11 +61,16 @@ export default function DailySheetsClient({
   useEffect(() => { refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filterDriver, filterVehicle, filterMonth, filterYear, filterShift, filterPaid]);
 
   const totals = useMemo(() => {
-    const gross = sheets.reduce((s, x) => s + x.grossEarnings, 0);
+    const gross    = sheets.reduce((s, x) => s + x.grossEarnings,         0);
+    const debit    = sheets.reduce((s, x) => s + x.debitFee,              0);
+    const debitTxn = sheets.reduce((s, x) => s + x.debitTransactionCount, 0);
+    const gas      = sheets.reduce((s, x) => s + x.gasDeduction,          0);
+    const call     = sheets.reduce((s, x) => s + x.callChargeDeduction,   0);
+    const extra    = sheets.reduce((s, x) => s + x.extraExpenseDeduction, 0);
     // Net shown on this master list is COMPANY NET (profit per shift),
     // not driver pay — owner's-eye view per the client's spec.
-    const net   = sheets.reduce((s, x) => s + (x.companyNet ?? 0), 0);
-    return { gross, net };
+    const net      = sheets.reduce((s, x) => s + (x.companyNet ?? 0),     0);
+    return { gross, debit, debitTxn, gas, call, extra, net };
   }, [sheets]);
 
   function toggleSelect(id: string) {
@@ -108,7 +113,7 @@ export default function DailySheetsClient({
     <>
       <PageHeader
         title="Daily Sheets"
-        description={`${sheets.length} sheet${sheets.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} company net`}
+        description={`${sheets.length} sheet${sheets.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} driver pay`}
       />
 
       {/* Filters */}
@@ -175,7 +180,7 @@ export default function DailySheetsClient({
                       className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                   </th>
-                  {['Date', 'Driver', 'Cab', 'Shift', 'Gross', 'Net (60% − exp.)', 'Paid', ''].map((h) => (
+                  {['Date', 'Driver', 'Cab', 'Shift', 'Gross', 'Debit ($)', 'Debit Txn', 'Gas ($)', 'Call ($)', 'Extra ($)', 'Driver Pay', 'Paid', ''].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -199,6 +204,11 @@ export default function DailySheetsClient({
                     <td className="px-3 py-3 font-mono font-bold text-gray-900">#{s.vehicleNumber}</td>
                     <td className="px-3 py-3"><Badge variant={s.shift === 'MORNING' ? 'morning' : 'evening'} /></td>
                     <td className="px-3 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(s.grossEarnings)}</td>
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrency(s.debitFee)}</td>
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{s.debitTransactionCount}</td>
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrency(s.gasDeduction)}</td>
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrency(s.callChargeDeduction)}</td>
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrency(s.extraExpenseDeduction)}</td>
                     <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}
                         title={`60% (${formatCurrency(s.grossEarnings * 0.6)}) − debit ${formatCurrency(Math.max(s.debitFee - s.debitTransactionCount, 0))} − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
                       {formatCurrency(s.companyNet ?? 0)}
@@ -223,6 +233,11 @@ export default function DailySheetsClient({
                     Totals ({sheets.length} sheet{sheets.length !== 1 ? 's' : ''})
                   </td>
                   <td className="px-3 py-3 font-bold text-gray-900 whitespace-nowrap">{formatCurrency(totals.gross)}</td>
+                  <td className="px-3 py-3 font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.debit)}</td>
+                  <td className="px-3 py-3 font-bold text-gray-700 whitespace-nowrap">{totals.debitTxn}</td>
+                  <td className="px-3 py-3 font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.gas)}</td>
+                  <td className="px-3 py-3 font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.call)}</td>
+                  <td className="px-3 py-3 font-bold text-gray-700 whitespace-nowrap">{formatCurrency(totals.extra)}</td>
                   <td className={`px-3 py-3 font-bold whitespace-nowrap ${totals.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCurrency(totals.net)}
                   </td>
