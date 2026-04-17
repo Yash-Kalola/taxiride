@@ -49,8 +49,11 @@ export async function syncDraftPayout(scope: PayoutScope): Promise<void> {
     },
   });
 
-  const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
-  const totalNetPay     = sheets.reduce((s, x) => s + x.netDriverPay, 0);
+  const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings,      0);
+  // Driver pay is the SETTLEMENT amount — summed per-shift company net,
+  // which is (gross × 60% − debit − gas − call − extra) per sheet.
+  // Negative total → company pays driver. Positive total → driver pays company.
+  const totalNetPay     = sheets.reduce((s, x) => s + (x.companyNet ?? 0),   0);
   const totalDeductions = totalGross - totalNetPay;
 
   await prisma.driverPayout.update({
@@ -91,8 +94,8 @@ export async function freezePayoutTotals(payoutId: string): Promise<void> {
     },
   });
 
-  const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
-  const totalNetPay     = sheets.reduce((s, x) => s + x.netDriverPay, 0);
+  const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings,      0);
+  const totalNetPay     = sheets.reduce((s, x) => s + (x.companyNet ?? 0),   0);
   const totalDeductions = totalGross - totalNetPay;
 
   await prisma.driverPayout.update({

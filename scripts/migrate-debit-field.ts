@@ -1,18 +1,21 @@
 /**
- * One-off data migration: recompute netDriverPay and companyNet on every
- * DailySheet and DriverPayout so stored values match the current formula
- * in lib/driver-pay.ts.
+ * One-off data migration: recompute netDriverPay + companyNet on every
+ * DailySheet, and recompute totalGross / totalNetPay / totalDeductions on
+ * every DriverPayout, so stored values match the current business model.
  *
- * Current formula:
- *   netDriverPay  = gross × 40%
- *   debitFeeTotal = debitFee − debitTransactionCount   ($1/txn subtracted)
- *   companyNet    = gross × 60% − debitFeeTotal − gas − callCharge − extra
+ * Current business model (see lib/driver-pay.ts):
+ *   Per-sheet:
+ *     netDriverPay  = gross × 40%                         (reference only)
+ *     debitFeeTotal = debitFee − debitTransactionCount    ($1/txn subtracted)
+ *     companyNet    = gross × 60% − debitFeeTotal − gas − call − extra
+ *     driver pay per shift = companyNet    (can be negative or positive)
+ *
+ *   Per DriverPayout (10-day aggregate):
+ *     totalGross      = sum(sheet.grossEarnings)
+ *     totalNetPay     = sum(sheet.companyNet)    ← the driver pay total
+ *     totalDeductions = totalGross − totalNetPay
  *
  * Both debitFee and debitTransactionCount are preserved as-is — no merging.
- *
- * What this script does to each DriverPayout:
- *   Re-aggregates totalGross / totalNetPay / totalDeductions from the
- *   now-refreshed daily sheets in the same (driver, period, month, year).
  *
  * Safe to run multiple times — a second run touches nothing once all
  * rows have correct derived values.
@@ -50,10 +53,11 @@ function recomputeSheet(inputs: {
   return { netDriverPay, companyNet };
 }
 
-/** Projected post-migration values, keyed by sheet id. Used so the payout
- *  aggregation step reports correct numbers during dry runs (where sheets
- *  haven't actually been written to the DB yet). */
-const projectedNetPay = new Map<string, number>();
+/** Projected post-migration per-shift driver pay (= companyNet), keyed by
+ *  sheet id. Used so the payout aggregation step reports correct numbers
+ *  during dry runs (where sheets haven't actually been written to the DB
+ *  yet). */
+const projectedDriverPay = new Map<string, number>();
 
 async function migrateSheets() {
   const sheets = await prisma.dailySheet.findMany({
@@ -73,7 +77,7 @@ async function migrateSheets() {
       extraExpenseDeduction: s.extraExpenseDeduction,
     });
 
-    projectedNetPay.set(s.id, netDriverPay);
+    projectedDriverPay.set(s.id, companyNet);
 
     const needsRecompute =
       Math.abs(s.netDriverPay - netDriverPay) > EPSILON ||
@@ -123,10 +127,12 @@ async function migratePayouts() {
     if (sheets.length === 0) { unchanged++; continue; }
 
     const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
-    // Use the projected post-migration netDriverPay so dry-runs report
-    // what totals will look like after applying, not what's in the DB now.
+    // totalNetPay is now the summed PER-SHIFT driver pay, where each shift's
+    // driver pay = companyNet (gross × 60% − expenses). Can be negative.
+    // Use projected value in dry-run so the aggregate reflects what the
+    // sheet WILL be after the migration writes.
     const totalNetPay     = sheets.reduce(
-      (s, x) => s + (projectedNetPay.get(x.id) ?? x.netDriverPay),
+      (s, x) => s + (projectedDriverPay.get(x.id) ?? (x.companyNet ?? 0)),
       0,
     );
     const totalDeductions = totalGross - totalNetPay;

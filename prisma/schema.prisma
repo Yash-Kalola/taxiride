@@ -285,8 +285,8 @@ model DailySheet {
   extraExpenseDeduction Float     @default(0)
   extraExpenseNote      String    @default("")
   hoursWorked           Float     @default(0)   // legacy — no longer collected by the UI
-  netDriverPay          Float     @default(0)   // driver take-home: gross × 40% (never reduced by fees)
-  companyNet            Float     @default(0)   // company profit: gross × 60% − (debitFee − txnCount) − gas − call − extra
+  netDriverPay          Float     @default(0)   // gross × 40% (reference only; driver pay per shift = companyNet)
+  companyNet            Float     @default(0)   // driver pay per shift: gross × 60% − (debitFee − txnCount) − gas − call − extra (can be ±)
   payoutPeriod          Int                     // 1 (1–10), 2 (11–20), 3 (21–end) — derived from date
   month                 Int
   year                  Int

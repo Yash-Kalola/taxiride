@@ -30,7 +30,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       shift:                 s.shift as 'MORNING' | 'EVENING',
       vehicleNumber:         s.vehicleNumber,
       grossEarnings:         s.grossEarnings,
-      netDriverPay:          s.netDriverPay,
+      // Driver pay per shift = companyNet (gross × 60% − expenses).
+      // Summed into totalNetPay on the DriverPayout aggregate.
+      netDriverPay:          s.companyNet ?? 0,
     }));
 
     const driverData: PayoutDriverData = {

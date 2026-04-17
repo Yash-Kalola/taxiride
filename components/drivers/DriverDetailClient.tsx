@@ -82,12 +82,14 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
     [driver.dailySheets, viewMonth, viewYear]
   );
 
-  // Summary cards
+  // Summary cards.
+  // "Driver pay" = the settlement amount per shift (gross × 60% − expenses)
+  // summed across all sheets in view. Can be negative (company owes driver)
+  // or positive (driver owes company).
   const summary = useMemo(() => {
-    const gross       = sheetsInMonth.reduce((s, x) => s + x.grossEarnings, 0);
-    const driverPay   = sheetsInMonth.reduce((s, x) => s + x.netDriverPay, 0);
-    const companyNet  = sheetsInMonth.reduce((s, x) => s + (x.companyNet ?? 0), 0);
-    return { gross, driverPay, companyNet };
+    const gross     = sheetsInMonth.reduce((s, x) => s + x.grossEarnings,      0);
+    const driverPay = sheetsInMonth.reduce((s, x) => s + (x.companyNet ?? 0),   0);
+    return { gross, driverPay };
   }, [sheetsInMonth]);
 
   // 10-day periods (3 cards for this month)
@@ -97,8 +99,8 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
       const sheets = sheetsInMonth.filter((s) => s.payoutPeriod === period);
       const existing = driver.payouts.find((p) => p.payoutPeriod === period && p.month === viewMonth && p.year === viewYear) ?? null;
       const totals = {
-        gross:     sheets.reduce((s, x) => s + x.grossEarnings, 0),
-        driverPay: sheets.reduce((s, x) => s + x.netDriverPay, 0),
+        gross:     sheets.reduce((s, x) => s + x.grossEarnings,    0),
+        driverPay: sheets.reduce((s, x) => s + (x.companyNet ?? 0), 0),
       };
       return { period, sheetCount: sheets.length, totals, existing };
     });
@@ -280,11 +282,16 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
         <Button variant="primary" onClick={openAddSheet} disabled={!driver.isActive}>+ Add Daily Sheet</Button>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <SummaryCard label="Gross Earned"     value={formatCurrency(summary.gross)} tone="indigo" />
-        <SummaryCard label="Driver Pay (40%)" value={formatCurrency(summary.driverPay)} tone="emerald" />
-        <SummaryCard label="Company Net (60% − expenses)" value={formatCurrency(summary.companyNet)} tone={summary.companyNet >= 0 ? 'slate' : 'amber'} small />
+      {/* Summary cards — driver pay is the settlement amount (60% − expenses)
+          summed across sheets; can be negative (company owes driver) or
+          positive (driver owes company). */}
+      <div className="grid grid-cols-2 gap-4">
+        <SummaryCard label="Gross Earned" value={formatCurrency(summary.gross)} tone="indigo" />
+        <SummaryCard
+          label="Driver Pay"
+          value={formatCurrency(summary.driverPay)}
+          tone={summary.driverPay >= 0 ? 'emerald' : 'amber'}
+        />
       </div>
 
       {/* Daily sheets table */}
@@ -293,14 +300,14 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Date', 'Shift', 'Cab', 'Gross', 'Driver (40%)', 'Co. Net', 'Paid', ''].map((h) => (
+                {['Date', 'Shift', 'Cab', 'Gross', 'Driver Pay', 'Paid', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {sheetsInMonth.length === 0 ? (
-                <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-400">No daily sheets for {MONTHS[viewMonth - 1]} {viewYear}.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-400">No daily sheets for {MONTHS[viewMonth - 1]} {viewYear}.</td></tr>
               ) : sheetsInMonth.map((s) => {
                 return (
                   <tr key={s.id} className="group hover:bg-gray-50">
@@ -308,11 +315,8 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
                     <td className="px-3 py-3"><Badge variant={s.shift === 'MORNING' ? 'morning' : 'evening'} /></td>
                     <td className="px-3 py-3 font-mono font-bold text-gray-900">#{s.vehicleNumber}</td>
                     <td className="px-3 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(s.grossEarnings)}</td>
-                    <td className="px-3 py-3 font-semibold text-emerald-600 whitespace-nowrap">
-                      {formatCurrency(s.netDriverPay)}
-                    </td>
-                    <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-slate-700' : 'text-red-600'}`}
-                        title={`60% − debit ${formatCurrency(Math.max(s.debitFee - s.debitTransactionCount, 0))} (${formatCurrency(s.debitFee)} − ${s.debitTransactionCount} txn) − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
+                    <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}
+                        title={`60% (${formatCurrency(s.grossEarnings * 0.6)}) − debit ${formatCurrency(Math.max(s.debitFee - s.debitTransactionCount, 0))} (${formatCurrency(s.debitFee)} − ${s.debitTransactionCount} txn) − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
                       {formatCurrency(s.companyNet ?? 0)}
                     </td>
                     <td className="px-3 py-3">
@@ -359,8 +363,8 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
                   <span className="font-medium text-gray-700">{formatCurrency(totals.gross)}</span>
                 </div>
                 <div className="flex justify-between border-t border-gray-100 pt-1.5 mt-1.5">
-                  <span className="font-semibold text-gray-900">Driver Pay (40%)</span>
-                  <span className="font-bold text-emerald-600">
+                  <span className="font-semibold text-gray-900">Driver Pay</span>
+                  <span className={`font-bold ${totals.driverPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCurrency(totals.driverPay)}
                   </span>
                 </div>

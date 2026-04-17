@@ -130,7 +130,7 @@ export default function PayoutsClient({
     <>
       <PageHeader
         title="10-Day Payouts"
-        description={`${payouts.length} record${payouts.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} net pay`}
+        description={`${payouts.length} record${payouts.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} driver pay`}
         action={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={downloadAllPDF} disabled={!filterPeriod}>Download PDF</Button>
@@ -191,7 +191,7 @@ export default function PayoutsClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Driver', 'Period', 'Dates', 'Gross', 'Driver Pay (40%)', 'Status', ''].map((h) => (
+                  {['Driver', 'Period', 'Dates', 'Gross', 'Driver Pay', 'Status', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>

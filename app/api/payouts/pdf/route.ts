@@ -48,7 +48,8 @@ export async function GET(request: NextRequest) {
         shift:                 s.shift as 'MORNING' | 'EVENING',
         vehicleNumber:         s.vehicleNumber,
         grossEarnings:         s.grossEarnings,
-        netDriverPay:          s.netDriverPay,
+        // Driver pay per shift = companyNet (gross × 60% − expenses).
+        netDriverPay:          s.companyNet ?? 0,
       }));
       return {
         driverName:     p.driver.name,

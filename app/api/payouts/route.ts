@@ -62,11 +62,11 @@ export async function POST(request: NextRequest) {
       where: { driverId, payoutPeriod, month, year },
     });
 
-    const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
-    const totalNetPay     = sheets.reduce((s, x) => s + x.netDriverPay, 0);
-    // totalDeductions = totalGross - totalNetPay (= the company's 60%).
-    // Driver pay is always gross × 40%; debit fees and other expenses are
-    // company costs and don't reduce the driver's take.
+    const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings,      0);
+    // Driver pay is the settlement amount per shift (gross × 60% − expenses),
+    // summed across the 10-day period. Can be negative (company owes driver)
+    // or positive (driver owes company) — client-specified business model.
+    const totalNetPay     = sheets.reduce((s, x) => s + (x.companyNet ?? 0),   0);
     const totalDeductions = totalGross - totalNetPay;
 
     // Upsert on unique (driverId, payoutPeriod, month, year)

@@ -76,7 +76,7 @@ export interface PayoutSheet {
   shift: 'MORNING' | 'EVENING';
   vehicleNumber: string;
   grossEarnings: number;
-  netDriverPay: number;      // gross × 40%
+  netDriverPay: number;      // driver pay per shift = gross × 60% − expenses
 }
 
 export interface PayoutDriverData {
@@ -84,7 +84,7 @@ export interface PayoutDriverData {
   driverPhone?: string;
   sheets: PayoutSheet[];
   totalGross: number;
-  totalNetPay: number;       // sum of driver 40%
+  totalNetPay: number;       // sum of per-shift driver pay (can be negative)
 }
 
 function PayoutFooter() {
@@ -114,7 +114,8 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
       </View>
 
       <Text style={s.formulaStrip}>
-        Driver pay = Gross × 40%
+        Driver pay per shift = Gross × 60% − debit − gas − call − extra.
+        Summed across the period. Negative = company pays driver; positive = driver pays company.
       </Text>
 
       <View style={s.tableHeader}>
@@ -122,7 +123,7 @@ function DriverBlock({ data }: { data: PayoutDriverData }) {
         <Text style={[s.colHdr, s.cShift]}>Shift</Text>
         <Text style={[s.colHdr, s.cVehicle]}>Cab</Text>
         <Text style={[s.colHdr, s.cGross]}>Gross</Text>
-        <Text style={[s.colHdr, s.cDriver]}>Driver Pay (40%)</Text>
+        <Text style={[s.colHdr, s.cDriver]}>Driver Pay</Text>
       </View>
 
       {data.sheets.length === 0 ? (
@@ -219,7 +220,7 @@ function PayoutDoc({
                 <Text style={{ fontSize: 9, textAlign: 'right' }}>{formatCurrency(grandGross)}</Text>
               </View>
               <View style={s.grandRow}>
-                <Text style={s.grandLbl}>Grand Total Driver Pay (40%)</Text>
+                <Text style={s.grandLbl}>Grand Total Driver Pay</Text>
                 <Text style={[s.grandVal, { color: grand < 0 ? '#FCA5A5' : '#ffffff' }]}>{formatCurrency(grand)}</Text>
               </View>
             </View>
