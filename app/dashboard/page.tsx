@@ -14,22 +14,27 @@ export default async function DashboardPage() {
   let ridesCount = 0;
   let dbConnected = true;
 
-  // Company-vehicle P&L for the current month (only isCompanyCar=true vehicles)
+  // Company-vehicle P&L for the current month.
+  // IMPORTANT: investor/broker cars are intentionally EXCLUDED from this
+  // aggregation — we only track their daily sheets for record-keeping, not
+  // for the company's profit/loss. The `isCompanyCar: true` filter is what
+  // draws that line.
   const now = new Date();
   const curMonth = now.getMonth() + 1;
   const curYear  = now.getFullYear();
   let pnl = {
     gross: 0, driverPay: 0, companyShare: 0,
     gas: 0, call: 0, extra: 0, expenses: 0, companyNet: 0,
-    sheetCount: 0, carCount: 0,
+    sheetCount: 0, carCount: 0, investorCount: 0,
   };
 
   try {
-    const [allInvoices, companies, rides, companyCars] = await Promise.all([
+    const [allInvoices, companies, rides, companyCars, investorCarCount] = await Promise.all([
       prisma.invoice.findMany({ include: { company: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' } }),
       prisma.company.count(),
       prisma.ride.count(),
-      prisma.brokerVehicle.findMany({ where: { isCompanyCar: true }, select: { cabNumber: true } }),
+      prisma.brokerVehicle.findMany({ where: { isCompanyCar: true },  select: { cabNumber: true } }),
+      prisma.brokerVehicle.count({    where: { isCompanyCar: false, isActive: true } }),
     ]);
     recentInvoices = allInvoices.slice(0, 5);
     companiesCount = companies;
@@ -50,6 +55,9 @@ export default async function DashboardPage() {
 
     // P&L: aggregate daily sheets for company-owned cabs only
     const companyCabNumbers = companyCars.map((v) => v.cabNumber);
+    pnl.carCount      = companyCabNumbers.length;
+    pnl.investorCount = investorCarCount;
+
     if (companyCabNumbers.length > 0) {
       const sheets = await prisma.dailySheet.findMany({
         where: {
@@ -69,7 +77,6 @@ export default async function DashboardPage() {
       pnl.expenses     = pnl.gas + pnl.call + pnl.extra;
       pnl.companyShare = pnl.companyNet + pnl.expenses; // = gross × 60% − debit fees
       pnl.sheetCount   = sheets.length;
-      pnl.carCount     = companyCabNumbers.length;
     }
   } catch {
     dbConnected = false;
@@ -139,20 +146,32 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Company Vehicle P&L — current month, company-owned cabs only */}
-      {pnl.carCount > 0 && (
+      {/* Company Vehicle P&L — current month, company-owned cabs ONLY.
+          Investor/broker cars are intentionally excluded — their daily sheets
+          are kept for record-keeping only, not counted in the company's P&L.
+          A car's type is set on the Vehicles page ("Company Car" vs "Broker Car"). */}
+      {(pnl.carCount > 0 || pnl.investorCount > 0) && (
         <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <div>
               <h2 className="text-sm font-semibold text-gray-900">Company Vehicle P&amp;L</h2>
               <p className="mt-0.5 text-xs text-gray-500">
                 {MONTHS[curMonth - 1]} {curYear} · {pnl.carCount} company cab{pnl.carCount !== 1 ? 's' : ''} · {pnl.sheetCount} shift{pnl.sheetCount !== 1 ? 's' : ''}
+                {pnl.investorCount > 0 && (
+                  <span className="ml-1 text-gray-400">
+                    · {pnl.investorCount} investor car{pnl.investorCount !== 1 ? 's' : ''} excluded
+                  </span>
+                )}
               </p>
             </div>
             <Link href="/daily-sheets" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">View sheets →</Link>
           </div>
 
-          {pnl.sheetCount === 0 ? (
+          {pnl.carCount === 0 ? (
+            <div className="px-6 py-10 text-center text-sm text-gray-400">
+              No company-owned cabs yet. <Link href="/vehicles" className="text-indigo-600 hover:text-indigo-700">Mark a car as Company</Link> to include its shifts in P&amp;L.
+            </div>
+          ) : pnl.sheetCount === 0 ? (
             <div className="px-6 py-10 text-center text-sm text-gray-400">
               No daily sheets yet for company cabs this month.
             </div>
