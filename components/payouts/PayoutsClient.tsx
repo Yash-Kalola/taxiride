@@ -80,7 +80,7 @@ export default function PayoutsClient({
   async function markAllPaid() {
     const drafts = payouts.filter((p) => p.status === 'DRAFT');
     if (drafts.length === 0) { alert('No DRAFT payouts in current filter'); return; }
-    if (!confirm(`Mark ${drafts.length} draft payout${drafts.length !== 1 ? 's' : ''} as PAID? This also marks their daily sheets as paid.`)) return;
+    if (!confirm(`Mark ${drafts.length} unpaid payout${drafts.length !== 1 ? 's' : ''} as PAID? This also marks their daily sheets as paid.`)) return;
 
     // Collect per-driver failures so one bad row doesn't silently skip the
     // rest of the batch — surface the list to the user.
@@ -158,7 +158,7 @@ export default function PayoutsClient({
           </Select>
           <Select label="Status" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
             <option value="">All</option>
-            <option value="DRAFT">Draft</option>
+            <option value="DRAFT">Unpaid</option>
             <option value="PAID">Paid</option>
           </Select>
           <Select label="Driver" value={filterDriver} onChange={(e) => setFilterDriver(e.target.value)}>
@@ -172,7 +172,7 @@ export default function PayoutsClient({
       {payouts.some((p) => p.status === 'DRAFT') && (
         <div className="flex items-center justify-between rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
           <span className="text-sm font-medium text-amber-700">
-            {payouts.filter((p) => p.status === 'DRAFT').length} draft payout{payouts.filter((p) => p.status === 'DRAFT').length !== 1 ? 's' : ''} in current filter
+            {payouts.filter((p) => p.status === 'DRAFT').length} unpaid payout{payouts.filter((p) => p.status === 'DRAFT').length !== 1 ? 's' : ''} in current filter
           </span>
           <Button size="sm" variant="primary" onClick={markAllPaid}>Mark All Paid</Button>
         </div>

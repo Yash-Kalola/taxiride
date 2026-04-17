@@ -21,7 +21,7 @@ const styles: Record<BadgeVariant, string> = {
 const labels: Record<BadgeVariant, string> = {
   paid:     'Paid',
   pending:  'Pending',
-  draft:    'Draft',
+  draft:    'Unpaid',
   flagged:  'Flagged',
   overdue:  'Overdue',
   active:   'Active',

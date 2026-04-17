@@ -353,7 +353,7 @@ export default function VehiclesClient({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Cab #', 'Morning Driver', 'Evening Driver', 'Ownership', 'Assigned Broker', 'Status', ''].map((h) => (
+                  {['Cab #', 'Ownership', 'Assigned Broker', 'Status', ''].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -363,20 +363,6 @@ export default function VehiclesClient({
                   <>
                     <tr key={v.id} className="group hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-4 font-mono text-sm font-bold text-gray-900">#{v.cabNumber}</td>
-                      <td className="px-5 py-4">
-                        <DriverCell
-                          shift="MORNING"
-                          assignment={assignmentByCab.get(v.cabNumber)?.morning ?? null}
-                          onAssign={() => openAssign(v, 'MORNING')}
-                        />
-                      </td>
-                      <td className="px-5 py-4">
-                        <DriverCell
-                          shift="EVENING"
-                          assignment={assignmentByCab.get(v.cabNumber)?.evening ?? null}
-                          onAssign={() => openAssign(v, 'EVENING')}
-                        />
-                      </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           v.isCompanyCar
@@ -428,7 +414,7 @@ export default function VehiclesClient({
                     {/* Documents sub-row (all vehicles) */}
                     {expandedDocs.has(v.id) && (
                       <tr key={`${v.id}-docs`}>
-                        <td colSpan={7} className="bg-indigo-50 px-5 py-3">
+                        <td colSpan={5} className="bg-indigo-50 px-5 py-3">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Documents — Cab #{v.cabNumber}</p>
                             <Button size="sm" variant="ghost" onClick={() => openAddDoc(v)}
@@ -466,7 +452,7 @@ export default function VehiclesClient({
                     {/* Accident sub-rows for company cars */}
                     {v.isCompanyCar && expandedAccidents.has(v.id) && (
                       <tr key={`${v.id}-accidents`}>
-                        <td colSpan={7} className="bg-red-50 px-5 py-3">
+                        <td colSpan={5} className="bg-red-50 px-5 py-3">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-bold uppercase tracking-widest text-red-400">Accident / Claim Records — Cab #{v.cabNumber}</p>
                             <Button size="sm" variant="ghost" onClick={() => openAddAccident(v)}
