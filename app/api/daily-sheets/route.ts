@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
-import { syncDraftPayouts } from '@/lib/payout-sync';
+import { syncPayouts } from '@/lib/payout-sync';
 import { parseLocalDate } from '@/lib/dates';
 
 /**
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
       })
     );
     // Sync any DRAFT payouts touched by this batch (one per unique scope).
-    await syncDraftPayouts(
+    await syncPayouts(
       created.map((s) => ({
         driverId:     s.driverId,
         payoutPeriod: s.payoutPeriod,
@@ -139,6 +139,13 @@ export async function PATCH(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
+    // Grab the scopes BEFORE the update so we can sync their payouts after
+    // (flipping isPaid can reopen a PAID payout — see lib/payout-sync.ts).
+    const affected = await prisma.dailySheet.findMany({
+      where:  { id: { in: parsed.data.ids } },
+      select: { driverId: true, payoutPeriod: true, month: true, year: true },
+    });
+
     const result = await prisma.dailySheet.updateMany({
       where: { id: { in: parsed.data.ids } },
       data:  {
@@ -146,6 +153,9 @@ export async function PATCH(request: NextRequest) {
         paidDate: parsed.data.isPaid ? new Date() : null,
       },
     });
+
+    await syncPayouts(affected);
+
     return NextResponse.json({ updated: result.count });
   } catch (err) {
     console.error(err);

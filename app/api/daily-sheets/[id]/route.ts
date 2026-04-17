@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
-import { syncDraftPayouts } from '@/lib/payout-sync';
+import { syncPayouts } from '@/lib/payout-sync';
 import { parseLocalDate } from '@/lib/dates';
 
 const updateSchema = z.object({
@@ -81,7 +81,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     // Sync DRAFT payouts for both the old and new period — if the sheet
     // moved across periods, both aggregates need a refresh.
-    await syncDraftPayouts([
+    await syncPayouts([
       { driverId: existing.driverId, payoutPeriod: existing.payoutPeriod, month: existing.month, year: existing.year },
       { driverId: updated.driverId,  payoutPeriod: updated.payoutPeriod,  month: updated.month,  year: updated.year  },
     ]);
@@ -102,7 +102,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   try {
-    // Grab the period info before delete so we can sync its draft payout after.
+    // Grab the period info before delete so we can sync its payout after
+    // (the payout may need totals refreshed, or reopening if it was PAID).
     const existing = await prisma.dailySheet.findUnique({
       where:  { id: params.id },
       select: { driverId: true, payoutPeriod: true, month: true, year: true },
@@ -111,7 +112,7 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
     await prisma.dailySheet.delete({ where: { id: params.id } });
 
     if (existing) {
-      await syncDraftPayouts([existing]);
+      await syncPayouts([existing]);
     }
 
     return new NextResponse(null, { status: 204 });

@@ -178,14 +178,16 @@ export default async function DashboardPage() {
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6">
-                <PnlCard label="Total Gross"     value={pnl.gross}        tone="neutral" />
-                <PnlCard label="Driver Pay (40%)"  value={pnl.driverPay}  tone="muted"   />
-                <PnlCard label="Company Share (60%)" value={pnl.companyShare} tone="muted" />
+                <PnlCard label="Total Gross"           value={pnl.gross}        tone="neutral" />
+                <PnlCard label="Driver Share (40%)"    value={pnl.driverPay}    tone="muted"
+                  sub="reference — not the driver pay" />
+                <PnlCard label="Company Share (60%)"   value={pnl.companyShare} tone="muted"
+                  sub="after debit fees" />
                 <PnlCard
-                  label="Company Net"
+                  label="Driver Pay / Company Net"
                   value={pnl.companyNet}
                   tone={pnl.companyNet >= 0 ? 'positive' : 'negative'}
-                  sub="after expenses"
+                  sub="= 60% − debit − gas − call − extra"
                 />
               </div>
 

@@ -1,7 +1,9 @@
 /**
  * One-off data migration: recompute netDriverPay + companyNet on every
- * DailySheet, and recompute totalGross / totalNetPay / totalDeductions on
- * every DriverPayout, so stored values match the current business model.
+ * DailySheet, recompute totalGross / totalNetPay / totalDeductions on
+ * every DriverPayout, AND reopen any PAID payout whose period no longer
+ * matches its frozen snapshot (pending sheet, or totals drifted).
+ * This brings stored values in line with the current business model.
  *
  * Current business model (see lib/driver-pay.ts):
  *   Per-sheet:
@@ -111,6 +113,7 @@ async function migratePayouts() {
   });
 
   let updated   = 0;
+  let reopened  = 0;
   let unchanged = 0;
 
   for (const p of payouts) {
@@ -137,29 +140,48 @@ async function migratePayouts() {
     );
     const totalDeductions = totalGross - totalNetPay;
 
-    const changed =
+    const totalsChanged =
       Math.abs(p.totalGross      - totalGross)      > EPSILON ||
       Math.abs(p.totalNetPay     - totalNetPay)     > EPSILON ||
       Math.abs(p.totalDeductions - totalDeductions) > EPSILON;
 
-    if (!changed) { unchanged++; continue; }
-    updated++;
+    // A PAID payout with any pending sheet OR a stale total should reopen.
+    // This matches lib/payout-sync.ts: the stored snapshot only holds while
+    // the period's state actually matches what was paid.
+    const anyPendingSheet = sheets.some((x) => !x.isPaid);
+    const shouldReopen = p.status === 'PAID' && (anyPendingSheet || totalsChanged);
 
-    console.log(
-      `  payout ${p.id.slice(0, 8)} (period ${p.payoutPeriod}, ${p.month}/${p.year}):` +
-      ` gross ${p.totalGross.toFixed(2)} → ${totalGross.toFixed(2)},` +
-      ` net ${p.totalNetPay.toFixed(2)} → ${totalNetPay.toFixed(2)}`
-    );
+    if (!totalsChanged && !shouldReopen) { unchanged++; continue; }
+
+    const label = `  payout ${p.id.slice(0, 8)} (period ${p.payoutPeriod}, ${p.month}/${p.year})`;
+
+    if (shouldReopen) {
+      reopened++;
+      console.log(
+        `${label}: REOPEN (status PAID → DRAFT)` +
+        (anyPendingSheet ? ` — has ${sheets.filter((x) => !x.isPaid).length} pending sheet(s)` : '') +
+        (totalsChanged ? ` — totals drifted` : '')
+      );
+    } else {
+      updated++;
+      console.log(
+        `${label}: gross ${p.totalGross.toFixed(2)} → ${totalGross.toFixed(2)},` +
+        ` net ${p.totalNetPay.toFixed(2)} → ${totalNetPay.toFixed(2)}`
+      );
+    }
 
     if (!dryRun) {
       await prisma.driverPayout.update({
         where: { id: p.id },
-        data: { totalGross, totalNetPay, totalDeductions },
+        data: {
+          totalGross, totalNetPay, totalDeductions,
+          ...(shouldReopen ? { status: 'DRAFT', paidDate: null } : {}),
+        },
       });
     }
   }
 
-  return { total: payouts.length, updated, unchanged };
+  return { total: payouts.length, updated, reopened, unchanged };
 }
 
 async function main() {
@@ -180,7 +202,8 @@ async function main() {
   const payoutStats = await migratePayouts();
   console.log(
     `  ${payoutStats.total} total · ` +
-    `${payoutStats.updated} updated · ` +
+    `${payoutStats.updated} totals updated · ` +
+    `${payoutStats.reopened} reopened (PAID→Unpaid) · ` +
     `${payoutStats.unchanged} already correct\n`
   );
 
