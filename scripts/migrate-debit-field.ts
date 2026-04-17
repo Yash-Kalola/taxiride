@@ -1,24 +1,21 @@
 /**
- * One-off data migration: consolidate debitFee × debitTransactionCount into
- * a single debitFee total, and recompute derived fields on every DailySheet
- * and DriverPayout so stored values match the current formula in
- * lib/driver-pay.ts.
+ * One-off data migration: recompute netDriverPay and companyNet on every
+ * DailySheet and DriverPayout so stored values match the current formula
+ * in lib/driver-pay.ts.
  *
  * Current formula:
  *   netDriverPay  = gross × 40%
- *   companyNet    = gross × 60% − debitFee − gas − callCharge − extra
+ *   debitFeeTotal = debitFee − debitTransactionCount   ($1/txn subtracted)
+ *   companyNet    = gross × 60% − debitFeeTotal − gas − callCharge − extra
  *
- * What this script does to each DailySheet:
- *   1. If debitTransactionCount > 0: set debitFee = debitFee × count, then
- *      set debitTransactionCount = 0. (Safe — once count=0 the row is frozen.)
- *   2. Recompute netDriverPay and companyNet from the resulting values.
+ * Both debitFee and debitTransactionCount are preserved as-is — no merging.
  *
  * What this script does to each DriverPayout:
  *   Re-aggregates totalGross / totalNetPay / totalDeductions from the
  *   now-refreshed daily sheets in the same (driver, period, month, year).
  *
  * Safe to run multiple times — a second run touches nothing once all
- * rows have debitTransactionCount=0 and derived fields match.
+ * rows have correct derived values.
  *
  * Usage:
  *   npm run migrate:debit -- --dry-run    # print changes, write nothing
@@ -36,15 +33,17 @@ const EPSILON = 0.005;
 
 function recomputeSheet(inputs: {
   grossEarnings: number;
-  gasDeduction: number;
   debitFee: number;
+  debitTransactionCount: number;
+  gasDeduction: number;
   callChargeDeduction: number;
   extraExpenseDeduction: number;
 }): { netDriverPay: number; companyNet: number } {
-  const netDriverPay = inputs.grossEarnings * DRIVER_SHARE_RATE;
-  const companyShare = inputs.grossEarnings * COMPANY_SHARE_RATE;
-  const companyNet   = companyShare
-    - inputs.debitFee
+  const netDriverPay   = inputs.grossEarnings * DRIVER_SHARE_RATE;
+  const companyShare   = inputs.grossEarnings * COMPANY_SHARE_RATE;
+  const debitFeeTotal  = Math.max(inputs.debitFee - inputs.debitTransactionCount, 0);
+  const companyNet     = companyShare
+    - debitFeeTotal
     - inputs.gasDeduction
     - inputs.callChargeDeduction
     - inputs.extraExpenseDeduction;
@@ -61,18 +60,15 @@ async function migrateSheets() {
     orderBy: [{ year: 'asc' }, { month: 'asc' }, { date: 'asc' }],
   });
 
-  let mergedDebit = 0;
-  let recomputed  = 0;
-  let unchanged   = 0;
+  let recomputed = 0;
+  let unchanged  = 0;
 
   for (const s of sheets) {
-    const needsMerge  = s.debitTransactionCount > 0;
-    const newDebitFee = needsMerge ? s.debitFee * s.debitTransactionCount : s.debitFee;
-
     const { netDriverPay, companyNet } = recomputeSheet({
       grossEarnings:         s.grossEarnings,
+      debitFee:              s.debitFee,
+      debitTransactionCount: s.debitTransactionCount,
       gasDeduction:          s.gasDeduction,
-      debitFee:              newDebitFee,
       callChargeDeduction:   s.callChargeDeduction,
       extraExpenseDeduction: s.extraExpenseDeduction,
     });
@@ -83,39 +79,26 @@ async function migrateSheets() {
       Math.abs(s.netDriverPay - netDriverPay) > EPSILON ||
       Math.abs(s.companyNet   - companyNet)   > EPSILON;
 
-    if (!needsMerge && !needsRecompute) { unchanged++; continue; }
-
-    if (needsMerge)      mergedDebit++;
-    if (needsRecompute)  recomputed++;
+    if (!needsRecompute) { unchanged++; continue; }
+    recomputed++;
 
     const label = `${s.date.toISOString().slice(0, 10)} ${s.shift} cab#${s.vehicleNumber}`;
-    if (needsMerge) {
-      console.log(
-        `  ${label}: debit ${s.debitFee.toFixed(2)} × ${s.debitTransactionCount}` +
-        ` → ${newDebitFee.toFixed(2)} single`
-      );
-    }
-    if (needsRecompute) {
-      console.log(
-        `  ${label}: driverPay ${s.netDriverPay.toFixed(2)} → ${netDriverPay.toFixed(2)},` +
-        ` companyNet ${s.companyNet.toFixed(2)} → ${companyNet.toFixed(2)}`
-      );
-    }
+    console.log(
+      `  ${label}: debit ${s.debitFee.toFixed(2)} − ${s.debitTransactionCount} txn` +
+      ` = ${Math.max(s.debitFee - s.debitTransactionCount, 0).toFixed(2)}` +
+      ` | driverPay ${s.netDriverPay.toFixed(2)} → ${netDriverPay.toFixed(2)}` +
+      ` | companyNet ${s.companyNet.toFixed(2)} → ${companyNet.toFixed(2)}`
+    );
 
     if (!dryRun) {
       await prisma.dailySheet.update({
         where: { id: s.id },
-        data: {
-          debitFee:              newDebitFee,
-          debitTransactionCount: 0,
-          netDriverPay,
-          companyNet,
-        },
+        data: { netDriverPay, companyNet },
       });
     }
   }
 
-  return { total: sheets.length, mergedDebit, recomputed, unchanged };
+  return { total: sheets.length, recomputed, unchanged };
 }
 
 async function migratePayouts() {
@@ -135,6 +118,9 @@ async function migratePayouts() {
         year:         p.year,
       },
     });
+
+    // Skip payouts whose backing sheets no longer exist — don't zero them out.
+    if (sheets.length === 0) { unchanged++; continue; }
 
     const totalGross      = sheets.reduce((s, x) => s + x.grossEarnings, 0);
     // Use the projected post-migration netDriverPay so dry-runs report
@@ -173,14 +159,13 @@ async function migratePayouts() {
 async function main() {
   console.log(
     `\n${dryRun ? '[DRY RUN]' : '[APPLY]'} ` +
-    `Consolidating debit field and recomputing derived values\n`
+    `Recomputing derived values with formula: debitFeeTotal = amount − txnCount\n`
   );
 
   console.log('▸ Daily sheets');
   const sheetStats = await migrateSheets();
   console.log(
     `  ${sheetStats.total} total · ` +
-    `${sheetStats.mergedDebit} debit merged · ` +
     `${sheetStats.recomputed} recomputed · ` +
     `${sheetStats.unchanged} already correct\n`
   );

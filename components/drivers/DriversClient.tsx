@@ -170,28 +170,19 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Name', 'Phone', 'Vehicle', 'Shift', 'Status', ''].map((h) => (
+                  {['Name', 'Phone', 'Status', ''].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map((d) => {
-                  const cur = d.assignments[0];
-                  return (
+                {filtered.map((d) => (
                     <tr key={d.id} className="group hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-4">
                         <Link href={`/drivers/${d.id}`} className="font-semibold text-indigo-600 hover:text-indigo-800">{d.name}</Link>
                         {d.licenseNumber && <p className="text-xs text-gray-400 font-mono mt-0.5">Lic: {d.licenseNumber}</p>}
                       </td>
                       <td className="px-5 py-4 text-sm text-gray-600">{d.phone || <span className="text-gray-300">—</span>}</td>
-                      <td className="px-5 py-4">
-                        {cur ? <span className="font-mono font-bold text-gray-900">#{cur.vehicleNumber}</span>
-                             : <span className="text-gray-300 text-sm">— Unassigned —</span>}
-                      </td>
-                      <td className="px-5 py-4">
-                        {cur ? <Badge variant={cur.shift === 'MORNING' ? 'morning' : 'evening'} /> : <span className="text-gray-300 text-sm">—</span>}
-                      </td>
                       <td className="px-5 py-4">
                         <Badge variant={d.isActive ? 'active' : 'inactive'} />
                       </td>
@@ -205,8 +196,7 @@ export default function DriversClient({ initialDrivers }: { initialDrivers: Driv
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
+                  ))}
               </tbody>
             </table>
           </div>

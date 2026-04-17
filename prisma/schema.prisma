@@ -279,14 +279,14 @@ model DailySheet {
   shift                 Shift
   grossEarnings         Float     @default(0)
   gasDeduction          Float     @default(0)
-  debitFee              Float     @default(0)   // total debit settlement amount for the shift
-  debitTransactionCount Int       @default(0)   // legacy — unused by the calc (kept for historical rows)
+  debitFee              Float     @default(0)   // total debit settlement from terminal
+  debitTransactionCount Int       @default(0)   // # of debit txns ($1 each, subtracted from debitFee)
   callChargeDeduction   Float     @default(0)
   extraExpenseDeduction Float     @default(0)
   extraExpenseNote      String    @default("")
   hoursWorked           Float     @default(0)   // legacy — no longer collected by the UI
   netDriverPay          Float     @default(0)   // driver take-home: gross × 40% (never reduced by fees)
-  companyNet            Float     @default(0)   // company profit: gross × 60% − debitFee − gas − call − extra
+  companyNet            Float     @default(0)   // company profit: gross × 60% − (debitFee − txnCount) − gas − call − extra
   payoutPeriod          Int                     // 1 (1–10), 2 (11–20), 3 (21–end) — derived from date
   month                 Int
   year                  Int

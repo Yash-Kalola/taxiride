@@ -6,9 +6,10 @@
  *   2. The gross is split straight 40 / 60:
  *        driverPay    = gross × 40%            (driver's take-home — never reduced by fees)
  *        companyShare = gross × 60%            (company's share before expenses)
- *   3. Debit is the single settlement amount from the terminal (e.g. "$48.80"
- *      on the receipt). It's a COMPANY cost, subtracted once from the 60%:
- *        debitFeeTotal = debitFee                (single total, not per-txn × count)
+ *   3. Debit settlement from the terminal has a $1 processing fee per
+ *      transaction.  The company cost is the settlement minus those fees:
+ *        debitFeeTotal = debitAmount − debitTransactionCount
+ *      e.g. $80 total, 3 txns → $80 − $3 = $77 deducted from the 60%.
  *   4. Other company-side expenses (gas, call charges, extra) also come
  *      out of the company's 60%:
  *        companyNet = companyShare − debitFeeTotal − gas − callCharge − extra
@@ -17,9 +18,6 @@
  *        day 1–10   = period 1
  *        day 11–20  = period 2
  *        day 21–end = period 3
- *
- * Historical note: `debitTransactionCount` is kept in the interface/schema
- * for legacy rows but is no longer used by the calculation.
  */
 
 export const DRIVER_SHARE_RATE  = 0.40;
@@ -28,15 +26,15 @@ export const COMPANY_SHARE_RATE = 0.60;
 export interface PayInputs {
   grossEarnings: number;
   gasDeduction: number;
-  debitFee: number;              // total debit settlement amount for the shift
-  debitTransactionCount: number; // legacy — unused by the calculation
+  debitFee: number;              // total debit settlement from the terminal
+  debitTransactionCount: number; // # of debit txns ($1 each, subtracted from debitFee)
   callChargeDeduction: number;
   extraExpenseDeduction: number;
 }
 
 export interface PayBreakdown {
   gross: number;           // what the driver entered (100%)
-  debitFeeTotal: number;   // total debit settlement (company cost, deducted from 60%)
+  debitFeeTotal: number;   // debitFee − txnCount (company cost, deducted from 60%)
   driverPay: number;       // gross × 40% — driver's take-home (unaffected by fees)
   companyShare: number;    // gross × 60% — company share before expenses
   gas: number;
@@ -54,13 +52,15 @@ function safe(v: number): number {
 export function computePayBreakdown(inputs: PayInputs): PayBreakdown {
   const gross        = safe(inputs.grossEarnings);
   const debitFee     = safe(inputs.debitFee);
+  const debitCount   = safe(inputs.debitTransactionCount);
   const gas          = safe(inputs.gasDeduction);
   const callCharge   = safe(inputs.callChargeDeduction);
   const extra        = safe(inputs.extraExpenseDeduction);
 
-  // Debit is the single settlement amount on the terminal receipt — subtracted
-  // once, not multiplied by a transaction count.
-  const debitFeeTotal   = debitFee;
+  // Each debit transaction carries a $1 processing fee. The company cost
+  // is the terminal settlement minus those per-txn fees:
+  //   e.g. $80 settlement, 3 txns → $80 − $3 = $77
+  const debitFeeTotal   = Math.max(debitFee - debitCount, 0);
   const driverPay       = gross * DRIVER_SHARE_RATE;
   const companyShare    = gross * COMPANY_SHARE_RATE;
   const companyExpenses = debitFeeTotal + gas + callCharge + extra;

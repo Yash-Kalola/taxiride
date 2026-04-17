@@ -9,7 +9,7 @@ import { COMPANY_SHARE_RATE } from '@/lib/driver-pay';
  *
  * Formula (see lib/driver-pay.ts):
  *   companyShare    = gross × 60%
- *   debitFeeTotal   = debitFee                         — single settlement total (from 60%)
+ *   debitFeeTotal   = debitFee − txnCount               — settlement minus $1/txn (from 60%)
  *   companyNet      = companyShare − debitFees − gas − callCharge − extra
  *   driverPay (40%) = gross × 40%                      — unaffected by fees
  */
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     const rows = drivers.map((d) => {
       const totalGross       = d.dailySheets.reduce((s, ds) => s + ds.grossEarnings,         0);
-      const totalDebitFees   = d.dailySheets.reduce((s, ds) => s + ds.debitFee,                           0);
+      const totalDebitFees   = d.dailySheets.reduce((s, ds) => s + Math.max(ds.debitFee - ds.debitTransactionCount, 0), 0);
       const totalGas         = d.dailySheets.reduce((s, ds) => s + ds.gasDeduction,          0);
       const totalCallCharge  = d.dailySheets.reduce((s, ds) => s + ds.callChargeDeduction,   0);
       const totalExtra       = d.dailySheets.reduce((s, ds) => s + ds.extraExpenseDeduction, 0);
