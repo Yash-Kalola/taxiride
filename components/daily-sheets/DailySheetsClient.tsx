@@ -15,7 +15,7 @@ interface Sheet {
   shift: 'MORNING' | 'EVENING';
   grossEarnings: number; gasDeduction: number; debitFee: number; debitTransactionCount: number;
   callChargeDeduction: number; extraExpenseDeduction: number;
-  hoursWorked: number; netDriverPay: number; payoutPeriod: number;
+  hoursWorked: number; netDriverPay: number; companyNet: number; payoutPeriod: number;
   month: number; year: number; isPaid: boolean;
   driver: DriverRef;
 }
@@ -62,7 +62,9 @@ export default function DailySheetsClient({
 
   const totals = useMemo(() => {
     const gross = sheets.reduce((s, x) => s + x.grossEarnings, 0);
-    const net   = sheets.reduce((s, x) => s + x.netDriverPay, 0);
+    // Net shown on this master list is COMPANY NET (profit per shift),
+    // not driver pay — owner's-eye view per the client's spec.
+    const net   = sheets.reduce((s, x) => s + (x.companyNet ?? 0), 0);
     return { gross, net };
   }, [sheets]);
 
@@ -106,7 +108,7 @@ export default function DailySheetsClient({
     <>
       <PageHeader
         title="Daily Sheets"
-        description={`${sheets.length} sheet${sheets.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} net pay`}
+        description={`${sheets.length} sheet${sheets.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} company net`}
       />
 
       {/* Filters */}
@@ -173,7 +175,7 @@ export default function DailySheetsClient({
                       className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                   </th>
-                  {['Date', 'Driver', 'Cab', 'Shift', 'Gross', 'Net Pay', 'Paid', ''].map((h) => (
+                  {['Date', 'Driver', 'Cab', 'Shift', 'Gross', 'Net (60% − exp.)', 'Paid', ''].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -197,8 +199,9 @@ export default function DailySheetsClient({
                     <td className="px-3 py-3 font-mono font-bold text-gray-900">#{s.vehicleNumber}</td>
                     <td className="px-3 py-3"><Badge variant={s.shift === 'MORNING' ? 'morning' : 'evening'} /></td>
                     <td className="px-3 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(s.grossEarnings)}</td>
-                    <td className={`px-3 py-3 font-semibold whitespace-nowrap ${s.netDriverPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {formatCurrency(s.netDriverPay)}
+                    <td className={`px-3 py-3 font-semibold whitespace-nowrap ${(s.companyNet ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}
+                        title={`60% (${formatCurrency(s.grossEarnings * 0.6)}) − debit ${formatCurrency(Math.max(s.debitFee - s.debitTransactionCount, 0))} − gas ${formatCurrency(s.gasDeduction)} − call ${formatCurrency(s.callChargeDeduction)} − extra ${formatCurrency(s.extraExpenseDeduction)}`}>
+                      {formatCurrency(s.companyNet ?? 0)}
                     </td>
                     <td className="px-3 py-3"><Badge variant={s.isPaid ? 'paid' : 'pending'} /></td>
                     <td className="px-3 py-3">
