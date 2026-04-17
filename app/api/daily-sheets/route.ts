@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
+import { syncDraftPayouts } from '@/lib/payout-sync';
 import { parseLocalDate } from '@/lib/dates';
 
 /**
@@ -109,6 +110,16 @@ export async function POST(request: NextRequest) {
         });
       })
     );
+    // Sync any DRAFT payouts touched by this batch (one per unique scope).
+    await syncDraftPayouts(
+      created.map((s) => ({
+        driverId:     s.driverId,
+        payoutPeriod: s.payoutPeriod,
+        month:        s.month,
+        year:         s.year,
+      })),
+    );
+
     return NextResponse.json({ count: created.length, sheets: created }, { status: 201 });
   } catch (err: any) {
     if (err?.code === 'P2002') {

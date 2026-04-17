@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
+import { syncDraftPayouts } from '@/lib/payout-sync';
 import { parseLocalDate } from '@/lib/dates';
 
 const updateSchema = z.object({
@@ -77,6 +78,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (f.isPaid === false && existing.isPaid)  data.paidDate = null;
 
     const updated = await prisma.dailySheet.update({ where: { id: params.id }, data });
+
+    // Sync DRAFT payouts for both the old and new period — if the sheet
+    // moved across periods, both aggregates need a refresh.
+    await syncDraftPayouts([
+      { driverId: existing.driverId, payoutPeriod: existing.payoutPeriod, month: existing.month, year: existing.year },
+      { driverId: updated.driverId,  payoutPeriod: updated.payoutPeriod,  month: updated.month,  year: updated.year  },
+    ]);
+
     return NextResponse.json(updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -93,7 +102,18 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Grab the period info before delete so we can sync its draft payout after.
+    const existing = await prisma.dailySheet.findUnique({
+      where:  { id: params.id },
+      select: { driverId: true, payoutPeriod: true, month: true, year: true },
+    });
+
     await prisma.dailySheet.delete({ where: { id: params.id } });
+
+    if (existing) {
+      await syncDraftPayouts([existing]);
+    }
+
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });

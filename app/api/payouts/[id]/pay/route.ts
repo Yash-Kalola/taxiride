@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { freezePayoutTotals } from '@/lib/payout-sync';
 
 const schema = z.object({
   status:        z.enum(['DRAFT', 'PAID']).default('PAID'),
@@ -22,6 +23,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const payout = await prisma.driverPayout.findUnique({ where: { id: params.id } });
     if (!payout) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    // Freeze totals at the current sheet state before marking PAID, so the
+    // stored snapshot reflects what was actually paid (not whatever was
+    // computed when the payout was first generated).
+    if (status === 'PAID' && payout.status !== 'PAID') {
+      await freezePayoutTotals(payout.id);
+    }
 
     const paidDate = status === 'PAID' ? new Date() : null;
     const updated = await prisma.driverPayout.update({

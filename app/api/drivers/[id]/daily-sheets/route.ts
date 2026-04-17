@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { computePayBreakdown, computePayoutPeriod } from '@/lib/driver-pay';
+import { syncDraftPayout } from '@/lib/payout-sync';
 import { parseLocalDate } from '@/lib/dates';
 
 const createSchema = z.object({
@@ -82,6 +83,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         year:                  date.getFullYear(),
       },
     });
+
+    // Keep a pending DRAFT payout in sync with this new sheet (no-op if
+    // the payout doesn't exist yet or is already PAID).
+    await syncDraftPayout({
+      driverId:     sheet.driverId,
+      payoutPeriod: sheet.payoutPeriod,
+      month:        sheet.month,
+      year:         sheet.year,
+    });
+
     return NextResponse.json(sheet, { status: 201 });
   } catch (err: any) {
     if (err?.code === 'P2002') {
