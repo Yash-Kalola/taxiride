@@ -229,11 +229,9 @@ export default function CompanyExpensesClient({
         </div>
       </div>
 
-      {/* Totals strip */}
-      <div className="grid grid-cols-3 gap-4">
-        <SummaryCard label={`Total (${MONTHS[filterMonth - 1]} ${filterYear})`} value={totals.total} tone="indigo" />
-        <SummaryCard label="Paid"   value={totals.paid}   tone="emerald" />
-        <SummaryCard label="Unpaid" value={totals.unpaid} tone="amber"   />
+      {/* Single total card — per Yash: just one tab here with total expense. */}
+      <div>
+        <SummaryCard label={`Total Expense (${MONTHS[filterMonth - 1]} ${filterYear})`} value={totals.total} tone="indigo" />
       </div>
 
       {loading ? (
