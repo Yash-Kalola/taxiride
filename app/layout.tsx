@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import Sidebar from '@/components/layout/Sidebar';
+import AppShell from '@/components/layout/AppShell';
+import { getCurrentSession } from '@/lib/auth';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -7,14 +8,16 @@ export const metadata: Metadata = {
   description: 'Charge Call & Invoice System for 17116039 Canada Inc',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const sess = await getCurrentSession();
+  const currentUser = sess
+    ? { username: sess.un, displayName: sess.un, isAdmin: sess.admin, pages: sess.pages }
+    : null;
+
   return (
     <html lang="en">
       <body className="bg-gray-50 text-gray-900 antialiased">
-        <Sidebar />
-        <div className="pl-60 min-h-screen">
-          {children}
-        </div>
+        <AppShell currentUser={currentUser}>{children}</AppShell>
       </body>
     </html>
   );

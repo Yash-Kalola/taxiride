@@ -1,11 +1,19 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
+
+interface CurrentUser {
+  username:    string;
+  displayName: string;
+  isAdmin:     boolean;
+  pages:       string[];
+}
 
 const NAV = [
   {
-    href: '/dashboard',
+    href:  '/dashboard',
+    key:   'dashboard',
     label: 'Dashboard',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -14,7 +22,8 @@ const NAV = [
     ),
   },
   {
-    href: '/invoices',
+    href:  '/invoices',
+    key:   'invoices',
     label: 'Invoices',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -23,7 +32,8 @@ const NAV = [
     ),
   },
   {
-    href: '/companies',
+    href:  '/companies',
+    key:   'companies',
     label: 'Companies',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -32,7 +42,8 @@ const NAV = [
     ),
   },
   {
-    href: '/brokers',
+    href:  '/brokers',
+    key:   'brokers',
     label: 'Brokers',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -41,7 +52,8 @@ const NAV = [
     ),
   },
   {
-    href: '/vehicles',
+    href:  '/vehicles',
+    key:   'vehicles',
     label: 'Vehicles',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -50,7 +62,8 @@ const NAV = [
     ),
   },
   {
-    href: '/drivers',
+    href:  '/drivers',
+    key:   'drivers',
     label: 'Drivers',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -59,7 +72,8 @@ const NAV = [
     ),
   },
   {
-    href: '/daily-sheets',
+    href:  '/daily-sheets',
+    key:   'daily-sheets',
     label: 'Daily Sheets',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -68,7 +82,8 @@ const NAV = [
     ),
   },
   {
-    href: '/payouts',
+    href:  '/payouts',
+    key:   'payouts',
     label: 'Payouts',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -77,7 +92,8 @@ const NAV = [
     ),
   },
   {
-    href: '/expenses',
+    href:  '/expenses',
+    key:   'expenses',
     label: 'Broker Expenses',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -86,7 +102,8 @@ const NAV = [
     ),
   },
   {
-    href: '/company-expenses',
+    href:  '/company-expenses',
+    key:   'company-expenses',
     label: 'Company Expenses',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -95,7 +112,8 @@ const NAV = [
     ),
   },
   {
-    href: '/rides',
+    href:  '/rides',
+    key:   'rides',
     label: 'Rides',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -104,7 +122,8 @@ const NAV = [
     ),
   },
   {
-    href: '/overview',
+    href:  '/overview',
+    key:   'overview',
     label: 'Overview',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -113,7 +132,8 @@ const NAV = [
     ),
   },
   {
-    href: '/import',
+    href:  '/import',
+    key:   'import',
     label: 'Import',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -122,7 +142,8 @@ const NAV = [
     ),
   },
   {
-    href: '/settings/email',
+    href:  '/settings/email',
+    key:   'settings-email',
     label: 'Email Template',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -130,17 +151,41 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    href:      '/settings/users',
+    key:       'settings-users',
+    label:     'Users',
+    adminOnly: true,
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+      </svg>
+    ),
+  },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ currentUser }: { currentUser: CurrentUser | null }) {
   const pathname = usePathname();
+  const router   = useRouter();
 
-  // Pick the single nav item whose href is the *longest* prefix match.
-  // This avoids highlighting both parent and child when routes are nested.
-  const activeHref = NAV
+  // Filter nav by current user's permissions
+  const visibleNav = NAV.filter((item) => {
+    if (!currentUser) return false;
+    if (item.adminOnly) return currentUser.isAdmin;
+    if (currentUser.isAdmin) return true;
+    return currentUser.pages.includes(item.key);
+  });
+
+  const activeHref = visibleNav
     .map((n) => n.href)
     .filter((h) => pathname === h || pathname.startsWith(h + '/'))
     .sort((a, b) => b.length - a.length)[0];
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-slate-900">
@@ -160,7 +205,7 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {NAV.map((item) => {
+        {visibleNav.map((item) => {
           const active = item.href === activeHref;
           return (
             <Link
@@ -180,8 +225,34 @@ export default function Sidebar() {
         })}
       </nav>
 
+      {/* User + logout */}
+      {currentUser && (
+        <div className="border-t border-slate-800 px-3 py-3">
+          <div className="flex items-center gap-3 px-2 py-1.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+              {(currentUser.displayName || currentUser.username).slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{currentUser.displayName || currentUser.username}</p>
+              <p className="truncate text-xs text-slate-500">
+                {currentUser.isAdmin ? 'Admin' : `@${currentUser.username}`}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={logout}
+            className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+            </svg>
+            Sign out
+          </button>
+        </div>
+      )}
+
       {/* Footer */}
-      <div className="border-t border-slate-800 px-5 py-4">
+      <div className="border-t border-slate-800 px-5 py-3">
         <p className="text-xs text-slate-500">17116039 Canada Inc</p>
         <p className="text-xs text-slate-600">HST # 787334432RT0001</p>
       </div>
