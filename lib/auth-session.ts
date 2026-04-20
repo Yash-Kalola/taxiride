@@ -38,9 +38,12 @@ async function hmacKey(): Promise<CryptoKey> {
   if (!secret || secret.length < 16) {
     throw new Error('SESSION_SECRET env var must be set (at least 16 chars)');
   }
+  // TS 5.9+ types Uint8Array as Uint8Array<ArrayBufferLike>, but Web Crypto
+  // wants a BufferSource (ArrayBuffer or ArrayBufferView<ArrayBuffer>). Cast
+  // is runtime-safe — Uint8Array values satisfy BufferSource.
   return crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(secret),
+    new TextEncoder().encode(secret) as BufferSource,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign', 'verify'],
@@ -58,7 +61,7 @@ export async function createSessionCookie(p: Omit<SessionPayload, 'exp'> & { exp
   };
   const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
   const key = await hmacKey();
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, payloadBytes));
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, payloadBytes as BufferSource));
   return `${b64urlEncode(payloadBytes)}.${b64urlEncode(sig)}`;
 }
 
@@ -71,7 +74,7 @@ export async function verifySessionCookie(cookie: string | undefined): Promise<S
     const payloadBytes = b64urlDecode(parts[0]);
     const sigBytes     = b64urlDecode(parts[1]);
     const key = await hmacKey();
-    const ok = await crypto.subtle.verify('HMAC', key, sigBytes, payloadBytes);
+    const ok = await crypto.subtle.verify('HMAC', key, sigBytes as BufferSource, payloadBytes as BufferSource);
     if (!ok) return null;
     const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as SessionPayload;
     if (!payload.uid || typeof payload.exp !== 'number') return null;
