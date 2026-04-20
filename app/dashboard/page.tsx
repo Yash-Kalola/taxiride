@@ -15,7 +15,6 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   let stats = { total: 0, paid: 0, pending: 0, draft: 0, overdue: 0, invoiceCount: 0, overdueCount: 0 };
-  let recentInvoices: any[] = [];
   let companiesCount = 0;
   let ridesCount = 0;
   let dbConnected = true;
@@ -46,7 +45,6 @@ export default async function DashboardPage() {
       prisma.brokerVehicle.findMany({ where: { isCompanyCar: true },  select: { cabNumber: true } }),
       prisma.brokerVehicle.count({    where: { isCompanyCar: false, isActive: true } }),
     ]);
-    recentInvoices = allInvoices.slice(0, 5);
     companiesCount = companies;
     ridesCount = rides;
 
@@ -289,57 +287,6 @@ export default async function DashboardPage() {
         </>
       )}
 
-      {/* Import CTA */}
-      <Link href="/import" className="block rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 p-5 shadow-sm hover:from-indigo-700 hover:to-indigo-800 transition-all group">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-200">TaxiCaller Export</p>
-            <p className="mt-1 text-xl font-bold text-white">Import Rides & Generate Invoices</p>
-            <p className="mt-1 text-sm text-indigo-200">Upload a .xlsx export to process all corporate accounts at once</p>
-          </div>
-          <div className="ml-6 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 group-hover:bg-white/20 transition-colors">
-            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-            </svg>
-          </div>
-        </div>
-      </Link>
-
-      {/* Recent invoices */}
-      {recentInvoices.length > 0 && (
-        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">Recent Invoices</h2>
-            <Link href="/invoices" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">View all →</Link>
-          </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                {['Invoice #', 'Company', 'Month', 'Total', 'Status'].map((h) => (
-                  <th key={h} className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {recentInvoices.map((inv) => (
-                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-3.5 font-mono text-sm font-medium text-gray-900">#{inv.invoiceNumber}</td>
-                  <td className="px-6 py-3.5 text-sm text-gray-700">{inv.company.companyName}</td>
-                  <td className="px-6 py-3.5 text-sm text-gray-500">{inv.month} {inv.year}</td>
-                  <td className="px-6 py-3.5 text-sm font-medium text-gray-900">{formatCurrency(inv.total)}</td>
-                  <td className="px-6 py-3.5">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      inv.status === 'PAID'    ? 'bg-emerald-50 text-emerald-700' :
-                      inv.status === 'PENDING' ? 'bg-amber-50 text-amber-700'    :
-                                                 'bg-slate-100 text-slate-600'
-                    }`}>{inv.status.charAt(0) + inv.status.slice(1).toLowerCase()}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
