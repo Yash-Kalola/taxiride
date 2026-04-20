@@ -80,8 +80,10 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
       if (filterYear    && inv.year      !== filterYear)    return false;
       if (filterMonth   && inv.month     !== filterMonth)   return false;
       if (filterCompany && inv.companyId !== filterCompany) return false;
-      if (filterStatus === 'UNPAID' && inv.status === 'PAID') return false;
-      if (filterStatus === 'PAID'   && inv.status !== 'PAID') return false;
+      if (filterStatus === 'UNPAID'  && inv.status === 'PAID') return false;
+      if (filterStatus === 'DRAFT'   && inv.status !== 'DRAFT')   return false;
+      if (filterStatus === 'PENDING' && inv.status !== 'PENDING') return false;
+      if (filterStatus === 'PAID'    && inv.status !== 'PAID')    return false;
       if (filterFlagged === 'yes' && !(inv.flagged && !inv.verified)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -214,6 +216,8 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
           </Select>
           <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="w-32">
             <option value="UNPAID">Unpaid</option>
+            <option value="DRAFT">Draft</option>
+            <option value="PENDING">Pending</option>
             <option value="PAID">Paid</option>
             <option value="">All</option>
           </Select>
