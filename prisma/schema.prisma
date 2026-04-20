@@ -29,6 +29,7 @@ model Ride {
   pickupLocation  String    @default("")
   dropoffLocation String    @default("")
   passenger       String    @default("")
+  customerPhone   String    @default("")
   driver          String    @default("")
   dateTime        String    @default("")
   amount          Float     @default(0)

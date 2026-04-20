@@ -12,6 +12,7 @@ const rideInputSchema = z.object({
   jobId:           z.string().default(''),
   dateTime:        z.string().default(''),
   passenger:       z.string().default(''),
+  customerPhone:   z.string().default(''),
   pickupLocation:  z.string().default(''),
   dropoffLocation: z.string().default(''),
   vehicleNumber:   z.string().default(''),

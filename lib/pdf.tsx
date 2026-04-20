@@ -76,14 +76,40 @@ const styles = StyleSheet.create({
   footerBankKey:  { fontSize: 7.5, color: '#6B7280' },
   footerBankVal:  { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: '#374151' },
 
-  // Page 2 ride table
-  p2Title:       { fontFamily: 'Helvetica-Bold', fontSize: 13, marginBottom: 18, color: '#111827' },
-  p2ColDate:     { width: 75, fontSize: 9 },
-  p2ColPickup:   { flex: 1, fontSize: 9 },
-  p2ColDropoff:  { flex: 1, fontSize: 9 },
-  p2ColCab:      { width: 48, textAlign: 'center', fontSize: 9 },
-  p2ColAmt:      { width: 70, textAlign: 'right', fontSize: 9 },
-  p2ColHdr:      { fontFamily: 'Helvetica-Bold', fontSize: 8, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6B7280' },
+  // Page 2 ride table — LEGAL landscape (14" × 8.5"). Column widths tuned
+  // to fit Trip ID | Date | Customer | Phone | Pickup | Dropoff | Cab | Amount
+  // without wrapping the tabular fields; pickup/dropoff flex to take remaining space.
+  p2Page:        { fontFamily: 'Helvetica', fontSize: 8.5, padding: 24, color: '#111827', backgroundColor: '#ffffff' },
+  p2Header:      { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  p2HeaderLogo:  { width: 60, marginRight: 12 },
+  p2HeaderInfo:  { flex: 1 },
+  p2HeaderBrand: { fontFamily: 'Helvetica-Bold', fontSize: 11, color: '#111827' },
+  p2HeaderMeta:  { fontSize: 8, color: '#6B7280' },
+  p2TitleBlock:  { alignItems: 'flex-end' },
+  p2TitleTop:    { fontSize: 8, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 2 },
+  p2Title:       { fontFamily: 'Helvetica-Bold', fontSize: 14, color: '#4F46E5' },
+  p2SubTitle:    { fontSize: 9, color: '#6B7280', marginTop: 2, textAlign: 'right' },
+
+  p2TableHeader: { flexDirection: 'row', backgroundColor: '#F3F4F6', padding: '5 6', borderTopWidth: 1, borderTopColor: '#E5E7EB', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  p2Row:         { flexDirection: 'row', padding: '4 6', borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
+  p2RowAlt:      { backgroundColor: '#FAFAFA' },
+  p2ColHdr:      { fontFamily: 'Helvetica-Bold', fontSize: 7.5, textTransform: 'uppercase', letterSpacing: 0.3, color: '#6B7280' },
+
+  p2ColJob:      { width: 72,  fontSize: 8 },
+  p2ColDate:     { width: 78,  fontSize: 8 },
+  p2ColCust:     { width: 96,  fontSize: 8 },
+  p2ColPhone:    { width: 82,  fontSize: 8 },
+  p2ColPickup:   { flex: 1,    fontSize: 8 },
+  p2ColDropoff:  { flex: 1,    fontSize: 8 },
+  p2ColCab:      { width: 36,  fontSize: 8, textAlign: 'center' },
+  p2ColAmt:      { width: 64,  fontSize: 8, textAlign: 'right', fontFamily: 'Helvetica-Bold' },
+
+  p2TotalRow:    { flexDirection: 'row', padding: '6 6', backgroundColor: '#EEF2FF', borderTopWidth: 1, borderTopColor: '#C7D2FE' },
+  p2TotalLbl:    { fontFamily: 'Helvetica-Bold', fontSize: 8.5, color: '#3730A3' },
+  p2TotalVal:    { fontFamily: 'Helvetica-Bold', fontSize: 8.5, color: '#3730A3', textAlign: 'right' },
+
+  p2Footer:      { position: 'absolute', bottom: 16, left: 24, right: 24, borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 6, flexDirection: 'row', justifyContent: 'space-between' },
+  p2FooterText:  { fontSize: 7, color: '#9CA3AF' },
 });
 
 function PageFooter() {
@@ -212,35 +238,70 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
         <PageFooter />
       </Page>
 
-      {/* ── Page 2: Ride Details ── */}
-      <Page size="LETTER" style={styles.page}>
-        <Text style={styles.p2Title}>
-          Ride Details — {invoice.month} {invoice.year} — {company.companyName}
-        </Text>
+      {/* ── Page 2: Ride Details (LEGAL landscape for full column visibility) ── */}
+      <Page size="LEGAL" orientation="landscape" style={styles.p2Page}>
+        {/* Compact header */}
+        <View style={styles.p2Header}>
+          {LOGO_SRC && <Image src={LOGO_SRC} style={styles.p2HeaderLogo} />}
+          <View style={styles.p2HeaderInfo}>
+            <Text style={styles.p2HeaderBrand}>{SENDER.name}</Text>
+            <Text style={styles.p2HeaderMeta}>{SENDER.address}  ·  {SENDER.city}  ·  {SENDER.phone}</Text>
+          </View>
+          <View style={styles.p2TitleBlock}>
+            <Text style={styles.p2TitleTop}>Invoice # {invoice.invoiceNumber}</Text>
+            <Text style={styles.p2Title}>RIDE DETAILS</Text>
+            <Text style={styles.p2SubTitle}>
+              {company.companyName} — {invoice.month} {invoice.year} — {rides.length} ride{rides.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+        </View>
 
-        <View style={styles.tableHeader}>
-          {(['Date', 'Pickup', 'Dropoff', 'Cab #', 'Amount'] as const).map((h, i) => (
-            <Text key={h} style={[
-              styles.p2ColHdr,
-              i === 0 ? styles.p2ColDate   :
-              i === 1 ? styles.p2ColPickup :
-              i === 2 ? styles.p2ColDropoff:
-              i === 3 ? styles.p2ColCab    : styles.p2ColAmt,
-            ]}>{h}</Text>
-          ))}
+        {/* Table header */}
+        <View style={styles.p2TableHeader} fixed>
+          <Text style={[styles.p2ColHdr, styles.p2ColJob]}>Trip ID</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColDate]}>Date / Time</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColCust]}>Customer</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColPhone]}>Phone</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColPickup]}>Pickup</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColDropoff]}>Dropoff</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColCab]}>Cab</Text>
+          <Text style={[styles.p2ColHdr, styles.p2ColAmt]}>Amount</Text>
         </View>
 
         {rides.map((ride, i) => (
-          <View key={i} style={styles.tableRow} wrap={false}>
-            <Text style={styles.p2ColDate}>{ride.dateTime}</Text>
-            <Text style={styles.p2ColPickup}>{ride.pickupLocation}</Text>
-            <Text style={styles.p2ColDropoff}>{ride.dropoffLocation}</Text>
-            <Text style={styles.p2ColCab}>{ride.vehicleNumber}</Text>
+          <View key={i} style={[styles.p2Row, i % 2 === 1 ? styles.p2RowAlt : {}]} wrap={false}>
+            <Text style={styles.p2ColJob}>{ride.jobId || '—'}</Text>
+            <Text style={styles.p2ColDate}>{ride.dateTime || '—'}</Text>
+            <Text style={styles.p2ColCust}>{ride.passenger || '—'}</Text>
+            <Text style={styles.p2ColPhone}>{ride.customerPhone || '—'}</Text>
+            <Text style={styles.p2ColPickup}>{ride.pickupLocation || '—'}</Text>
+            <Text style={styles.p2ColDropoff}>{ride.dropoffLocation || '—'}</Text>
+            <Text style={styles.p2ColCab}>{ride.vehicleNumber || '—'}</Text>
             <Text style={styles.p2ColAmt}>{formatCurrency(ride.amount)}</Text>
           </View>
         ))}
 
-        <PageFooter />
+        {/* Totals row */}
+        <View style={styles.p2TotalRow}>
+          <Text style={[styles.p2TotalLbl, styles.p2ColJob]}>Totals</Text>
+          <Text style={[styles.p2TotalLbl, styles.p2ColDate]}>({rides.length} ride{rides.length !== 1 ? 's' : ''})</Text>
+          <Text style={styles.p2ColCust} />
+          <Text style={styles.p2ColPhone} />
+          <Text style={styles.p2ColPickup} />
+          <Text style={styles.p2ColDropoff} />
+          <Text style={styles.p2ColCab} />
+          <Text style={[styles.p2TotalVal, styles.p2ColAmt]}>
+            {formatCurrency(rides.reduce((s, r) => s + r.amount, 0))}
+          </Text>
+        </View>
+
+        <View style={styles.p2Footer} fixed>
+          <Text style={styles.p2FooterText}>{SENDER.name}  ·  HST # {SENDER.hst}  ·  Invoice # {invoice.invoiceNumber}</Text>
+          <Text
+            style={styles.p2FooterText}
+            render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+          />
+        </View>
       </Page>
     </Document>
   );

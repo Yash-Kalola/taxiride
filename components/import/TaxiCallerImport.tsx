@@ -22,11 +22,30 @@ interface ParsedRideRow {
   jobId: string;
   dateTime: string;
   passenger: string;
+  customerPhone: string;
   pickupLocation: string;
   dropoffLocation: string;
   vehicleNumber: string;
   driver: string;
   amount: number;
+}
+
+// TaxiCaller's phone column label has varied over time; try the common ones.
+const PHONE_COLUMN_CANDIDATES = [
+  'Phone',
+  'Phone Number',
+  'Passenger Phone',
+  'Passenger Phone Number',
+  'Contact',
+  'Customer Phone',
+  'Mobile',
+];
+function readPhone(row: Record<string, unknown>): string {
+  for (const key of PHONE_COLUMN_CANDIDATES) {
+    const v = row[key];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
 }
 
 interface CompanyGroup {
@@ -153,6 +172,7 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           jobId:           String(r['Job ID'] ?? '').trim(),
           dateTime:        buildDateTime(parseExcelDate(r['Date'], XLSX), String(r['Start'] ?? '').trim()),
           passenger:       String(r['Passenger'] ?? '').trim(),
+          customerPhone:   readPhone(r as Record<string, unknown>),
           pickupLocation:  String(r['Pick-up'] ?? '').trim(),
           dropoffLocation: String(r['Drop-off'] ?? '').trim(),
           vehicleNumber:   String(r['Vehicle #'] ?? '').trim(),
@@ -272,6 +292,7 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
               jobId:           r.jobId,
               dateTime:        r.dateTime,
               passenger:       r.passenger,
+              customerPhone:   r.customerPhone,
               pickupLocation:  r.pickupLocation,
               dropoffLocation: r.dropoffLocation,
               vehicleNumber:   r.vehicleNumber,
