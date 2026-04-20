@@ -26,6 +26,10 @@ const bodySchema = z.object({
   groups: z.array(
     z.object({
       companyId: z.string().min(1),
+      // 'send' (default) = create + email and mark PENDING. 'draft' = create
+      // invoice and PDF, skip the email, leave status at DRAFT so the office
+      // can review and send manually.
+      sendMode:  z.enum(['send', 'draft']).default('send'),
       rows:      z.array(rideInputSchema).min(1),
     })
   ).min(1),
@@ -40,6 +44,7 @@ interface ResultEntry {
   amountTotal?:     number;
   flagged?:         boolean;
   duplicatesSkipped?: number;
+  sentAs?:          'sent' | 'draft';
   error?:           string;
 }
 
@@ -151,22 +156,26 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      try {
-        await sendInvoiceEmail({
-          to: invoice.company.email,
-          invoiceNumber,
-          month,
-          year,
-          pdfBuffer,
-        });
-      } catch {
-        // Email is stubbed — non-fatal, continue to mark PENDING
-      }
+      // Draft mode: PDF is rendered and the invoice stays DRAFT, no email.
+      // Send mode: try email (non-fatal if SMTP stub), then flip to PENDING.
+      if (group.sendMode === 'send') {
+        try {
+          await sendInvoiceEmail({
+            to: invoice.company.email,
+            invoiceNumber,
+            month,
+            year,
+            pdfBuffer,
+          });
+        } catch {
+          // Email is stubbed — non-fatal, continue to mark PENDING
+        }
 
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { status: 'PENDING', dateSent: format(today, 'yyyy-MM-dd') },
-      });
+        await prisma.invoice.update({
+          where: { id: invoice.id },
+          data: { status: 'PENDING', dateSent: format(today, 'yyyy-MM-dd') },
+        });
+      }
 
       results.push({
         companyId:        group.companyId,
@@ -177,6 +186,7 @@ export async function POST(request: NextRequest) {
         amountTotal:      grandTotal,
         flagged,
         duplicatesSkipped,
+        sentAs:           group.sendMode === 'draft' ? 'draft' : 'sent',
       });
 
     } catch (err: any) {

@@ -54,6 +54,7 @@ interface CompanyGroup {
   companyName: string;
   rows: ParsedRideRow[];
   selected: boolean;
+  sendMode: 'send' | 'draft';   // 'send' = email goes out; 'draft' = created without email
 }
 
 interface UnmatchedAccount {
@@ -70,6 +71,7 @@ interface ImportResult {
   amountTotal?: number;
   flagged?: boolean;
   duplicatesSkipped?: number;
+  sentAs?: 'sent' | 'draft';  // distinguishes emailed vs. kept as draft
   error?: string;
 }
 
@@ -208,7 +210,7 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
         groupMap.forEach((rows, accountId) => {
           const match = companyMap.get(accountId);
           if (match) {
-            groups.push({ accountId, companyId: match.id, companyName: match.companyName, rows, selected: true });
+            groups.push({ accountId, companyId: match.id, companyName: match.companyName, rows, selected: true, sendMode: 'send' });
           } else {
             unmatched.push({ accountId, rowCount: rows.length });
           }
@@ -260,6 +262,13 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
     }));
   }
 
+  function setSendMode(accountId: string, sendMode: 'send' | 'draft') {
+    setWizard((w) => ({
+      ...w,
+      groups: w.groups.map((g) => g.accountId === accountId ? { ...g, sendMode } : g),
+    }));
+  }
+
   function toggleCollapse(accountId: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -288,6 +297,7 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           year:  wizard.year,
           groups: selected.map((g) => ({
             companyId: g.companyId,
+            sendMode:  g.sendMode,
             rows: g.rows.map((r) => ({
               jobId:           r.jobId,
               dateTime:        r.dateTime,
@@ -317,6 +327,8 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
   const grandTotal    = wizard.groups.filter((g) => g.selected).reduce(
     (s, g) => s + g.rows.reduce((gs, r) => gs + r.amount, 0), 0
   );
+  const sendCount  = wizard.groups.filter((g) => g.selected && g.sendMode === 'send').length;
+  const draftCount = wizard.groups.filter((g) => g.selected && g.sendMode === 'draft').length;
 
   // ── Upload step ─────────────────────────────────────────────────────────────
 
@@ -520,6 +532,36 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                     <span className="font-semibold text-sm text-gray-900">{group.companyName}</span>
                     <span className="ml-2 font-mono text-xs text-gray-400">{group.accountId}</span>
                   </div>
+                  {/* Send / Draft toggle — only clickable when the row is selected */}
+                  {group.selected && (
+                    <div
+                      className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSendMode(group.accountId, 'send')}
+                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                          group.sendMode === 'send'
+                            ? 'bg-white text-emerald-700 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Send
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSendMode(group.accountId, 'draft')}
+                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                          group.sendMode === 'draft'
+                            ? 'bg-white text-amber-700 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Draft
+                      </button>
+                    </div>
+                  )}
                   <span className="text-xs text-gray-400">{group.rows.length} ride{group.rows.length !== 1 ? 's' : ''}</span>
                   <span className="text-sm font-semibold text-gray-700">{formatCurrency(subtotal)}</span>
                   <svg
@@ -585,6 +627,13 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           <div>
             <p className="text-xs text-gray-500">
               {selectedCount} of {wizard.groups.length} compan{wizard.groups.length !== 1 ? 'ies' : 'y'} · {selectedRides} ride{selectedRides !== 1 ? 's' : ''}
+              {selectedCount > 0 && (
+                <>
+                  {' · '}
+                  <span className="text-emerald-700">{sendCount} sending</span>
+                  {draftCount > 0 && <> · <span className="text-amber-700">{draftCount} draft</span></>}
+                </>
+              )}
             </p>
             <p className="text-xl font-bold text-gray-900 mt-0.5">Grand Total: {formatCurrency(grandTotal)}</p>
           </div>
@@ -646,10 +695,15 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                   <>
                     <span className="text-xs font-mono text-gray-400">Invoice #{r.invoiceNumber}</span>
                     <span className="text-sm font-semibold text-gray-700">{formatCurrency(r.amountTotal ?? 0)}</span>
-                    {r.flagged
-                      ? <Badge variant="flagged" />
-                      : <Badge variant="pending" />
-                    }
+                    {r.sentAs === 'draft' ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        Draft — not sent
+                      </span>
+                    ) : r.flagged ? (
+                      <Badge variant="flagged" />
+                    ) : (
+                      <Badge variant="pending" />
+                    )}
                   </>
                 )}
               </div>
