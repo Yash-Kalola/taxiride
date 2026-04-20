@@ -237,7 +237,9 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
     [companyMap]
   );
 
-  // ── Amount editing ──────────────────────────────────────────────────────────
+  // ── Row editing ─────────────────────────────────────────────────────────────
+  // The TaxiCaller export isn't always perfect — addresses mis-formatted, wrong
+  // cab #, etc. Let the office fix each field before we create the invoice.
 
   function updateAmount(accountId: string, rowIndex: number, value: string) {
     setWizard((w) => ({
@@ -247,6 +249,25 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           ...g,
           rows: g.rows.map((r) =>
             r.rowIndex !== rowIndex ? r : { ...r, amount: parseFloat(value) || 0 }
+          ),
+        }
+      ),
+    }));
+  }
+
+  type EditableRideField =
+    | 'passenger' | 'customerPhone'
+    | 'pickupLocation' | 'dropoffLocation'
+    | 'vehicleNumber' | 'driver' | 'dateTime';
+
+  function updateRowField(accountId: string, rowIndex: number, field: EditableRideField, value: string) {
+    setWizard((w) => ({
+      ...w,
+      groups: w.groups.map((g) =>
+        g.accountId !== accountId ? g : {
+          ...g,
+          rows: g.rows.map((r) =>
+            r.rowIndex !== rowIndex ? r : { ...r, [field]: value }
           ),
         }
       ),
@@ -502,6 +523,12 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
         </div>
         )}
 
+        {wizard.groups.length > 0 && (
+          <p className="text-xs text-gray-500 -mb-2">
+            <span className="font-medium text-gray-700">Tip:</span> Click any field (passenger, phone, pickup, dropoff, cab #, driver, amount) to edit before generating.
+          </p>
+        )}
+
         {/* Company groups */}
         {wizard.groups.length > 0 && (
         <div className="space-y-3">
@@ -577,8 +604,8 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50">
-                        {['Date/Time', 'Passenger', 'Pickup', 'Dropoff', 'Cab #', 'Driver', 'Payable'].map((h) => (
-                          <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        {['Date/Time', 'Passenger', 'Phone', 'Pickup', 'Dropoff', 'Cab #', 'Driver', 'Payable'].map((h) => (
+                          <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
                             {h}
                           </th>
                         ))}
@@ -586,14 +613,65 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {group.rows.map((r) => (
-                        <tr key={r.rowIndex} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-2.5 text-xs text-gray-600 font-mono whitespace-nowrap">{r.dateTime || '—'}</td>
-                          <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[120px] truncate">{r.passenger || '—'}</td>
-                          <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[130px] truncate">{r.pickupLocation || '—'}</td>
-                          <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[130px] truncate">{r.dropoffLocation || '—'}</td>
-                          <td className="px-4 py-2.5 text-xs font-mono text-gray-600 whitespace-nowrap">{r.vehicleNumber || '—'}</td>
-                          <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[100px] truncate">{r.driver || '—'}</td>
-                          <td className="px-4 py-2.5">
+                        <tr key={r.rowIndex} className="hover:bg-gray-50 transition-colors align-top">
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.dateTime}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'dateTime', e.target.value)}
+                              className="w-36 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-mono text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.passenger}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'passenger', e.target.value)}
+                              className="w-32 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.customerPhone}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'customerPhone', e.target.value)}
+                              placeholder="—"
+                              className="w-28 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.pickupLocation}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'pickupLocation', e.target.value)}
+                              className="w-52 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.dropoffLocation}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'dropoffLocation', e.target.value)}
+                              className="w-52 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.vehicleNumber}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'vehicleNumber', e.target.value)}
+                              className="w-16 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-mono text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={r.driver}
+                              onChange={(e) => updateRowField(group.accountId, r.rowIndex, 'driver', e.target.value)}
+                              className="w-28 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-gray-700 hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
                             <input
                               type="number"
                               step="0.01"
@@ -608,7 +686,7 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                     </tbody>
                     <tfoot>
                       <tr className="bg-gray-50 border-t border-gray-100">
-                        <td colSpan={6} className="px-4 py-2.5 text-xs font-semibold text-gray-500 text-right">Subtotal</td>
+                        <td colSpan={7} className="px-4 py-2.5 text-xs font-semibold text-gray-500 text-right">Subtotal</td>
                         <td className="px-4 py-2.5 text-sm font-bold text-gray-900">{formatCurrency(subtotal)}</td>
                       </tr>
                     </tfoot>
