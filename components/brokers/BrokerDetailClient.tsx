@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -97,6 +97,11 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   // --- Rides linked via cab number ---
   const [brokerRides, setBrokerRides] = useState<BrokerRide[]>([]);
   const [ridesLoading, setRidesLoading] = useState(false);
+  // Inline-edit state: which ride is being edited + the working values.
+  const [editingRideId, setEditingRideId] = useState<string | null>(null);
+  const [rideEdit,      setRideEdit]      = useState<{ pickupLocation: string; dropoffLocation: string; amount: string }>({ pickupLocation: '', dropoffLocation: '', amount: '' });
+  const [savingRide,    setSavingRide]    = useState(false);
+  const [rideError,     setRideError]     = useState<string | null>(null);
 
   // --- Recurring charges ---
   const [showAddRC, setShowAddRC] = useState(false);
@@ -250,15 +255,54 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   }
 
   // --- Fetch rides linked via cab number (re-fetches when viewMonth/viewYear changes) ---
-  useEffect(() => {
-    if (broker.vehicles.length === 0) return;
+  const fetchBrokerRides = useCallback(async () => {
+    if (broker.vehicles.length === 0) { setBrokerRides([]); return; }
     setRidesLoading(true);
-    fetch(`/api/brokers/${broker.id}/rides?month=${viewMonth}&year=${viewYear}`)
-      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
-      .then(data => { if (Array.isArray(data)) setBrokerRides(data); })
-      .catch(err => console.error('Failed to fetch rides:', err))
-      .finally(() => setRidesLoading(false));
+    try {
+      const r = await fetch(`/api/brokers/${broker.id}/rides?month=${viewMonth}&year=${viewYear}`);
+      if (!r.ok) throw new Error(r.statusText);
+      const data = await r.json();
+      if (Array.isArray(data)) setBrokerRides(data);
+    } catch (err) {
+      console.error('Failed to fetch rides:', err);
+    } finally {
+      setRidesLoading(false);
+    }
   }, [broker.id, broker.vehicles.length, viewMonth, viewYear]);
+  useEffect(() => { fetchBrokerRides(); }, [fetchBrokerRides]);
+
+  // --- Save edits to a single ride (pickup / dropoff / amount) ---
+  async function saveRideEdit(rideId: string) {
+    setRideError(null);
+    const amountNum = parseFloat(rideEdit.amount);
+    if (isNaN(amountNum) || amountNum < 0) {
+      setRideError('Amount must be a positive number');
+      return;
+    }
+    setSavingRide(true);
+    try {
+      const res = await fetch(`/api/rides/${rideId}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          pickupLocation:  rideEdit.pickupLocation,
+          dropoffLocation: rideEdit.dropoffLocation,
+          amount:          amountNum,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setRideError(typeof data?.error === 'string' ? data.error : 'Failed to save ride');
+        return;
+      }
+      setEditingRideId(null);
+      await fetchBrokerRides();
+    } catch {
+      setRideError('Network error — try again');
+    } finally {
+      setSavingRide(false);
+    }
+  }
 
   // --- Auto-generate recurring charges ---
   const didAutoGenRC = useRef(false);
@@ -960,26 +1004,98 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date', 'Cab #', 'Pickup', 'Drop Off', 'Amount'].map((h) => (
-                    <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                  {['Date', 'Cab #', 'Pickup', 'Drop Off', 'Amount', ''].map((h, i) => (
+                    <th key={i} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {brokerRides.map((ride) => (
-                  <tr key={ride.id} className={`transition-colors ${ride.voided ? 'bg-red-50/40 opacity-60' : 'hover:bg-gray-50'}`}>
-                    <td className={`px-4 py-3.5 text-sm whitespace-nowrap ${ride.voided ? 'text-gray-500 line-through' : 'text-gray-500'}`}>{ride.dateTime || '—'}</td>
-                    <td className={`px-4 py-3.5 text-sm font-mono font-semibold ${ride.voided ? 'text-gray-500 line-through' : 'text-gray-700'}`}>#{ride.vehicleNumber}</td>
-                    <td className={`px-4 py-3.5 text-sm text-gray-600 ${ride.voided ? 'line-through' : ''}`}>{ride.pickupLocation || '—'}</td>
-                    <td className={`px-4 py-3.5 text-sm text-gray-600 ${ride.voided ? 'line-through' : ''}`}>{ride.dropoffLocation || '—'}</td>
-                    <td className={`px-4 py-3.5 text-sm font-semibold ${ride.voided ? 'text-red-400 line-through' : 'text-gray-900'}`}>
-                      {ride.voided && <span className="mr-1.5 text-xs font-bold text-red-500 not-italic no-underline" style={{ textDecoration: 'none' }}>VOID</span>}
-                      {formatCurrency(ride.amount)}
+                {brokerRides.map((ride) => {
+                  const isEditing = editingRideId === ride.id;
+                  return (
+                  <tr key={ride.id} className={`group transition-colors ${ride.voided ? 'bg-red-50/40 opacity-60' : isEditing ? 'bg-indigo-50/40' : 'hover:bg-gray-50'}`}>
+                    <td className={`px-4 py-3 text-sm whitespace-nowrap ${ride.voided ? 'text-gray-500 line-through' : 'text-gray-500'}`}>{ride.dateTime || '—'}</td>
+                    <td className={`px-4 py-3 text-sm font-mono font-semibold ${ride.voided ? 'text-gray-500 line-through' : 'text-gray-700'}`}>#{ride.vehicleNumber}</td>
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={rideEdit.pickupLocation}
+                          onChange={(e) => setRideEdit((s) => ({ ...s, pickupLocation: e.target.value }))}
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+                        />
+                      ) : (
+                        <span className={`text-sm text-gray-600 ${ride.voided ? 'line-through' : ''}`}>{ride.pickupLocation || '—'}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={rideEdit.dropoffLocation}
+                          onChange={(e) => setRideEdit((s) => ({ ...s, dropoffLocation: e.target.value }))}
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+                        />
+                      ) : (
+                        <span className={`text-sm text-gray-600 ${ride.voided ? 'line-through' : ''}`}>{ride.dropoffLocation || '—'}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={rideEdit.amount}
+                          onChange={(e) => setRideEdit((s) => ({ ...s, amount: e.target.value }))}
+                          className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm text-right font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+                        />
+                      ) : (
+                        <span className={`text-sm font-semibold ${ride.voided ? 'text-red-400 line-through' : 'text-gray-900'}`}>
+                          {ride.voided && <span className="mr-1.5 text-xs font-bold text-red-500 not-italic no-underline" style={{ textDecoration: 'none' }}>VOID</span>}
+                          {formatCurrency(ride.amount)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-right">
+                      {ride.voided ? (
+                        <span className="text-xs text-gray-400 italic">voided</span>
+                      ) : isEditing ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="sm" variant="primary" disabled={savingRide} onClick={() => saveRideEdit(ride.id)}>
+                            {savingRide ? '\u2026' : 'Save'}
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={savingRide} onClick={() => { setEditingRideId(null); setRideError(null); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => {
+                            setRideError(null);
+                            setEditingRideId(ride.id);
+                            setRideEdit({
+                              pickupLocation:  ride.pickupLocation,
+                              dropoffLocation: ride.dropoffLocation,
+                              amount:          String(ride.amount),
+                            });
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
+            {rideError && (
+              <div className="px-5 py-3 text-sm text-red-600 border-t border-red-100 bg-red-50">{rideError}</div>
+            )}
             </div>
           </div>
         )}

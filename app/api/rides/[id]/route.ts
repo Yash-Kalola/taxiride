@@ -21,6 +21,21 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
   try {
     const ride = await prisma.ride.update({ where: { id: params.id }, data: parsed.data });
+
+    // If amount changed and the ride is attached to an invoice, recompute
+    // the invoice totals so they stay in sync with the line items.
+    if (parsed.data.amount !== undefined && ride.invoiceId) {
+      const remainingRides = await prisma.ride.findMany({
+        where:  { invoiceId: ride.invoiceId, voided: false },
+        select: { amount: true },
+      });
+      const newTotal = remainingRides.reduce((s, r) => s + r.amount, 0);
+      await prisma.invoice.update({
+        where: { id: ride.invoiceId },
+        data:  { amountPreTax: calcBase(newTotal), hst: calcHST(newTotal), total: newTotal },
+      });
+    }
+
     return NextResponse.json(ride);
   } catch (err: any) {
     if (err?.code === 'P2025') return NextResponse.json({ error: 'Not found' }, { status: 404 });
