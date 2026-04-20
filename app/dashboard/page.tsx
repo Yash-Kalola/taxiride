@@ -3,6 +3,12 @@ import { formatCurrency } from '@/lib/tax';
 import { MONTHS } from '@/lib/constants';
 import PageHeader from '@/components/ui/PageHeader';
 import DashboardRefresh from '@/components/dashboard/DashboardRefresh';
+import {
+  RevenueExpenseChart,
+  NetProfitLineChart,
+  ExpenseBreakdownChart,
+  type MonthPoint,
+} from '@/components/dashboard/DashboardCharts';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +33,10 @@ export default async function DashboardPage() {
     gas: 0, call: 0, extra: 0, expenses: 0, companyNet: 0,
     sheetCount: 0, carCount: 0, investorCount: 0,
   };
+  // Running totals for the current month's own overhead (Rent, Utilities, etc.)
+  let companyExpensesThisMonth = 0;
+  // 6-month trend (including current) for the dashboard charts
+  let trend: MonthPoint[] = [];
 
   try {
     const [allInvoices, companies, rides, companyCars, investorCarCount] = await Promise.all([
@@ -58,26 +68,67 @@ export default async function DashboardPage() {
     pnl.carCount      = companyCabNumbers.length;
     pnl.investorCount = investorCarCount;
 
-    if (companyCabNumbers.length > 0) {
-      const sheets = await prisma.dailySheet.findMany({
-        where: {
-          month: curMonth,
-          year:  curYear,
-          vehicleNumber: { in: companyCabNumbers },
-        },
-      });
-      for (const s of sheets) {
-        pnl.gross        += s.grossEarnings;
-        pnl.driverPay    += s.netDriverPay;
-        pnl.gas          += s.gasDeduction;
-        pnl.call         += s.callChargeDeduction;
-        pnl.extra        += s.extraExpenseDeduction;
-        pnl.companyNet   += s.companyNet;
-      }
-      pnl.expenses     = pnl.gas + pnl.call + pnl.extra;
-      pnl.companyShare = pnl.companyNet + pnl.expenses; // = gross × 60% − debit fees
-      pnl.sheetCount   = sheets.length;
+    // Build the 6-month trend in one pass. Goes back 5 months + includes current.
+    const months: { month: number; year: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(curYear, curMonth - 1 - i, 1);
+      months.push({ month: d.getMonth() + 1, year: d.getFullYear() });
     }
+    const earliest = months[0];
+    const latest   = months[months.length - 1];
+
+    const [trendSheets, trendExpenses] = await Promise.all([
+      companyCabNumbers.length > 0
+        ? prisma.dailySheet.findMany({
+            where: {
+              vehicleNumber: { in: companyCabNumbers },
+              OR: months.map((m) => ({ month: m.month, year: m.year })),
+            },
+            select: {
+              month: true, year: true,
+              grossEarnings: true, netDriverPay: true,
+              gasDeduction: true, callChargeDeduction: true, extraExpenseDeduction: true,
+              companyNet: true,
+            },
+          })
+        : Promise.resolve([] as any[]),
+      prisma.companyExpense.findMany({
+        where: {
+          OR: months.map((m) => ({ month: m.month, year: m.year })),
+        },
+        select: { month: true, year: true, amount: true },
+      }).catch(() => [] as { month: number; year: number; amount: number }[]),
+    ]);
+
+    trend = months.map((m) => {
+      const ss = trendSheets.filter((s) => s.month === m.month && s.year === m.year);
+      const xs = trendExpenses.filter((x) => x.month === m.month && x.year === m.year);
+      return {
+        month:   m.month,
+        year:    m.year,
+        revenue: ss.reduce((a, s) => a + s.grossEarnings, 0),
+        carExpenses: ss.reduce((a, s) =>
+          a + s.gasDeduction + s.callChargeDeduction + s.extraExpenseDeduction, 0),
+        companyExpenses: xs.reduce((a, x) => a + x.amount, 0),
+        companyNet: ss.reduce((a, s) => a + s.companyNet, 0)
+                  - xs.reduce((a, x) => a + x.amount, 0),
+      };
+    });
+
+    // Hydrate the existing monthly P&L from the trend slice for the current month
+    const cur = trend[trend.length - 1];
+    pnl.sheetCount = trendSheets.filter((s) => s.month === latest.month && s.year === latest.year).length;
+    const curSheets = trendSheets.filter((s) => s.month === latest.month && s.year === latest.year);
+    pnl.gross       = curSheets.reduce((a, s) => a + s.grossEarnings,         0);
+    pnl.driverPay   = curSheets.reduce((a, s) => a + s.netDriverPay,          0);
+    pnl.gas         = curSheets.reduce((a, s) => a + s.gasDeduction,          0);
+    pnl.call        = curSheets.reduce((a, s) => a + s.callChargeDeduction,   0);
+    pnl.extra       = curSheets.reduce((a, s) => a + s.extraExpenseDeduction, 0);
+    pnl.companyNet  = curSheets.reduce((a, s) => a + s.companyNet,            0);
+    pnl.expenses    = pnl.gas + pnl.call + pnl.extra;
+    pnl.companyShare = pnl.companyNet + pnl.expenses;
+    companyExpensesThisMonth = cur ? cur.companyExpenses : 0;
+    void earliest; // kept for potential future range-label use
   } catch {
     dbConnected = false;
   }
@@ -203,6 +254,39 @@ export default async function DashboardPage() {
             </>
           )}
         </div>
+      )}
+
+      {/* Charts — revenue/expense trend + breakdowns (current month).
+          Built on aggregates we already fetched for the P&L card, so no extra round-trip. */}
+      {dbConnected && pnl.carCount > 0 && (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <RevenueExpenseChart points={trend} />
+            <NetProfitLineChart points={trend} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <ExpenseBreakdownChart
+              title="Car Expenses (this month)"
+              sub={`${MONTHS[curMonth - 1]} ${curYear} · from daily sheets`}
+              slices={[
+                { label: 'Gas',   value: pnl.gas,   color: '#4F46E5' },
+                { label: 'Call',  value: pnl.call,  color: '#06B6D4' },
+                { label: 'Extra', value: pnl.extra, color: '#F59E0B' },
+              ]}
+            />
+            <ExpenseBreakdownChart
+              title="Revenue vs Expenses (this month)"
+              sub={`${MONTHS[curMonth - 1]} ${curYear} · where the money goes`}
+              slices={[
+                { label: 'Driver Pay (40%)', value: pnl.driverPay,              color: '#64748B' },
+                { label: 'Car Expenses',     value: pnl.expenses,               color: '#F59E0B' },
+                { label: 'Company Expenses', value: companyExpensesThisMonth,   color: '#EF4444' },
+                { label: 'Net Kept',         value: Math.max(pnl.companyNet - companyExpensesThisMonth, 0), color: '#10B981' },
+              ]}
+            />
+          </div>
+        </>
       )}
 
       {/* Import CTA */}

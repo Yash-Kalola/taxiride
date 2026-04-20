@@ -42,8 +42,7 @@ export default function DailySheetsClient({
   const [filterShift,    setFilterShift]    = useState<string>('');
   const [filterPaid,     setFilterPaid]     = useState<string>(''); // '', 'true', 'false'
 
-  async function refresh() {
-    setLoading(true);
+  function filterParams(): URLSearchParams {
     const params = new URLSearchParams();
     if (filterDriver)  params.set('driverId', filterDriver);
     if (filterVehicle) params.set('vehicleNumber', filterVehicle);
@@ -51,10 +50,20 @@ export default function DailySheetsClient({
     params.set('year', String(filterYear));
     if (filterShift)   params.set('shift', filterShift);
     if (filterPaid)    params.set('isPaid', filterPaid);
-    const res = await fetch('/api/daily-sheets?' + params.toString());
+    return params;
+  }
+
+  async function refresh() {
+    setLoading(true);
+    const res = await fetch('/api/daily-sheets?' + filterParams().toString());
     if (res.ok) setSheets(await res.json());
     setLoading(false);
     setSelected(new Set());
+  }
+
+  function downloadPDF() {
+    if (sheets.length === 0) return;
+    window.open('/api/daily-sheets/pdf?' + filterParams().toString(), '_blank');
   }
 
   // Re-fetch whenever filters change (including initial month)
@@ -114,6 +123,16 @@ export default function DailySheetsClient({
       <PageHeader
         title="Daily Sheets"
         description={`${sheets.length} sheet${sheets.length !== 1 ? 's' : ''} · ${formatCurrency(totals.net)} driver pay`}
+        action={
+          <Button
+            variant="secondary"
+            onClick={downloadPDF}
+            disabled={sheets.length === 0}
+            title={sheets.length === 0 ? 'No sheets to export' : 'Download filtered sheets as PDF'}
+          >
+            Download PDF
+          </Button>
+        }
       />
 
       {/* Filters */}
