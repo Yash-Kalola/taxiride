@@ -207,6 +207,114 @@ export function NetProfitLineChart({ points }: { points: MonthPoint[] }) {
   );
 }
 
+/** Line chart: profit vs total expenses, last N months. Two lines on one axis so
+ *  Yash can see "money in" alongside "money out" at a glance. */
+export function ProfitExpenseLineChart({ points }: { points: MonthPoint[] }) {
+  if (points.length === 0) return null;
+
+  const width = 640;
+  const height = 220;
+  const padL = 52, padR = 16, padT = 16, padB = 48;
+  const chartW = width - padL - padR;
+  const chartH = height - padT - padB;
+
+  // Hide future months (no data yet) from the axis so the chart doesn't drag
+  // flat-to-zero across every empty month.
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curYear  = now.getFullYear();
+  const visible = points.filter((p) => !(p.year > curYear || (p.year === curYear && p.month > curMonth)));
+  if (visible.length === 0) return null;
+
+  const expenses = visible.map((p) => p.carExpenses + p.companyExpenses);
+  const profits  = visible.map((p) => p.companyNet);
+
+  const vMin = Math.min(...profits, ...expenses, 0);
+  const vMax = Math.max(...profits, ...expenses, 0);
+  const span = (vMax - vMin) || 1;
+  const niceLo = Math.floor(vMin / 1000) * 1000;
+  const niceHi = Math.ceil(vMax / 1000) * 1000;
+  const niceSpan = (niceHi - niceLo) || span;
+
+  const x = (i: number) =>
+    visible.length === 1
+      ? padL + chartW / 2
+      : padL + (chartW * i) / (visible.length - 1);
+  const y = (v: number) => padT + chartH - ((v - niceLo) / niceSpan) * chartH;
+
+  const zeroY = y(0);
+  const gridLines = 4;
+
+  const profitPath  = visible.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.companyNet).toFixed(1)}`).join(' ');
+  const expensePath = visible.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.carExpenses + p.companyExpenses).toFixed(1)}`).join(' ');
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-6">
+      <div className="flex items-start justify-between mb-1">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Profit vs Expenses</h2>
+          <p className="mt-0.5 text-xs text-gray-500">
+            {visible.length === 1
+              ? `${MONTHS[visible[0].month - 1]} ${visible[0].year}`
+              : `${MONTHS[visible[0].month - 1]}–${MONTHS[visible[visible.length - 1].month - 1]} ${visible[visible.length - 1].year}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span className="inline-flex items-center gap-1"><span className="w-3 h-0.5 bg-emerald-500 inline-block" />Profit</span>
+          <span className="inline-flex items-center gap-1"><span className="w-3 h-0.5 bg-red-500 inline-block" />Expenses</span>
+        </div>
+      </div>
+
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+        {Array.from({ length: gridLines + 1 }).map((_, i) => {
+          const gy = padT + (chartH * i) / gridLines;
+          const v = niceHi - ((niceHi - niceLo) * i) / gridLines;
+          return (
+            <g key={i}>
+              <line x1={padL} y1={gy} x2={width - padR} y2={gy} stroke="#F3F4F6" strokeWidth={1} />
+              <text x={padL - 6} y={gy + 3} textAnchor="end" fontSize={9} fill="#9CA3AF">
+                {shortCurrency(v)}
+              </text>
+            </g>
+          );
+        })}
+
+        {niceLo < 0 && niceHi > 0 && (
+          <line x1={padL} y1={zeroY} x2={width - padR} y2={zeroY} stroke="#9CA3AF" strokeDasharray="3 3" strokeWidth={1} />
+        )}
+
+        <path d={expensePath} fill="none" stroke="#EF4444" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={profitPath}  fill="none" stroke="#10B981" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+
+        {visible.map((p, i) => (
+          <g key={`exp-${i}`}>
+            <circle cx={x(i)} cy={y(p.carExpenses + p.companyExpenses)} r={3.5} fill="#ffffff" stroke="#EF4444" strokeWidth={2}>
+              <title>{`${MONTHS[p.month - 1].slice(0, 3)} ${p.year} Expenses — ${formatCurrency(p.carExpenses + p.companyExpenses)}`}</title>
+            </circle>
+          </g>
+        ))}
+        {visible.map((p, i) => (
+          <g key={`pro-${i}`}>
+            <circle cx={x(i)} cy={y(p.companyNet)} r={3.5} fill="#ffffff" stroke="#10B981" strokeWidth={2}>
+              <title>{`${MONTHS[p.month - 1].slice(0, 3)} ${p.year} Profit — ${formatCurrency(p.companyNet)}`}</title>
+            </circle>
+          </g>
+        ))}
+
+        {visible.map((p, i) => (
+          <text key={i} x={x(i)} y={height - padB + 14} textAnchor="middle" fontSize={10} fill="#6B7280">
+            {MONTHS[p.month - 1].slice(0, 3)}
+          </text>
+        ))}
+      </svg>
+
+      {visible.length < points.length && (
+        <p className="mt-1 text-[10px] text-gray-400">Showing months with data — future months hidden.</p>
+      )}
+    </div>
+  );
+}
+
 /** Donut chart: current-month expense breakdown. */
 export function ExpenseBreakdownChart({ slices, title, sub }: {
   slices: ExpenseSlice[];

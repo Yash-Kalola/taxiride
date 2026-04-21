@@ -3,7 +3,8 @@ import { formatCurrency } from '@/lib/tax';
 import { MONTHS } from '@/lib/constants';
 import PageHeader from '@/components/ui/PageHeader';
 import DashboardRefresh from '@/components/dashboard/DashboardRefresh';
-import { RevenueExpenseChart, NetProfitLineChart, type MonthPoint } from '@/components/dashboard/DashboardCharts';
+import { RevenueExpenseChart, ProfitExpenseLineChart, ExpenseBreakdownChart, type MonthPoint } from '@/components/dashboard/DashboardCharts';
+import DashboardPDFButton from '@/components/dashboard/DashboardPDFButton';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -89,6 +90,22 @@ export default async function DashboardPage() {
       : Promise.resolve([] as { vehicleNumber: string; amount: number }[]),
   ]);
 
+  // Broker expenses tagged to a company cab also count as per-vehicle expenses.
+  // BrokerExpense is keyed by date (not month/year), so filter in memory after
+  // fetching the full-year slice for any company cab.
+  const yearStart = new Date(curYear, 0, 1);
+  const yearEnd   = new Date(curYear + 1, 0, 1);
+  const brokerExpensesYear = companyCabNumbers.length > 0
+    ? await prisma.brokerExpense.findMany({
+        where: {
+          cabNumber: { in: companyCabNumbers },
+          date:      { gte: yearStart, lt: yearEnd },
+        },
+        select: { cabNumber: true, amount: true, date: true },
+      }).catch(() => [] as { cabNumber: string; amount: number; date: Date }[])
+    : [];
+  const curBrokerExpenses = brokerExpensesYear.filter((e) => new Date(e.date).getMonth() + 1 === curMonth);
+
   // --- Current-month per-vehicle stats ---
   interface VehicleStats {
     cabNumber:  string;
@@ -96,14 +113,17 @@ export default async function DashboardPage() {
     driverPay:  number; // 40%
     gas:        number;
     extra:      number;
-    repairs:    number;
+    repairs:    number; // sum of cab-tagged Company Expenses + Broker Expenses for this cab
     profit:     number; // gross − driverPay − gas − extra − repairs
   }
   const perVehicle: VehicleStats[] = companyCabNumbers.map((cab) => {
     const sheets  = curSheets.filter((s) => s.vehicleNumber === cab);
-    const repairs = curRepairs
-      .filter((r) => r.vehicleNumber === cab)
-      .reduce((a, r) => a + r.amount, 0);
+    // Per-vehicle expense pool: CompanyExpense tagged to this cab (any category)
+    // + BrokerExpense with this cab #. This way wherever Yash logs a cab-tagged
+    // expense, it rolls into the cab's profit.
+    const repairs =
+      curRepairs.filter((r) => r.vehicleNumber === cab).reduce((a, r) => a + r.amount, 0) +
+      curBrokerExpenses.filter((e) => e.cabNumber === cab).reduce((a, e) => a + e.amount, 0);
     const gross     = sheets.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = sheets.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = sheets.reduce((a, s) => a + s.gasDeduction,          0);
@@ -139,20 +159,21 @@ export default async function DashboardPage() {
   const ytd: MonthPoint[] = ytdMonths.map((m) => {
     const ss = ytdSheets.filter((s) => s.month === m.month && s.year === m.year);
     const xs = ytdCompanyExpenses.filter((x) => x.month === m.month && x.year === m.year);
+    const bx = brokerExpensesYear.filter((e) => new Date(e.date).getMonth() + 1 === m.month);
     const gross     = ss.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = ss.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = ss.reduce((a, s) => a + s.gasDeduction,          0);
     const extra     = ss.reduce((a, s) => a + s.extraExpenseDeduction, 0);
-    // Per-vehicle repairs already baked into Vehicle Profit via curRepairs;
-    // carExpenses here covers the yearly chart only. Call charges are
-    // excluded from the profit formula per Yash's spec.
-    const repairs   = xs.filter((x) => x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
-    const otherExp  = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
-    const vehicleP  = gross - driverPay - gas - extra - repairs;
+    // Cab-tagged expenses from BOTH CompanyExpense (category-free) AND BrokerExpense
+    // roll into the per-vehicle bucket. Untagged CompanyExpense stays in Other Expense.
+    const perVehicleExp = xs.filter((x) => x.vehicleNumber).reduce((a, x) => a + x.amount, 0)
+                        + bx.reduce((a, e) => a + e.amount, 0);
+    const otherExp      = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
+    const vehicleP      = gross - driverPay - gas - extra - perVehicleExp;
     return {
       month: m.month, year: m.year,
       revenue:         gross,
-      carExpenses:     gas + extra + repairs,
+      carExpenses:     gas + extra + perVehicleExp,
       companyExpenses: otherExp,
       companyNet:      vehicleP - otherExp,
     };
@@ -218,7 +239,7 @@ export default async function DashboardPage() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-900">Per-Vehicle Profit — {MONTHS[curMonth - 1]} {curYear}</h2>
-          <Link href="/daily-sheets" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">View sheets →</Link>
+          <DashboardPDFButton href={`/api/dashboard/per-vehicle-pdf?month=${curMonth}&year=${curYear}`} />
         </div>
         {perVehicle.length === 0 ? (
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-10 text-center text-sm text-gray-400">
@@ -229,7 +250,7 @@ export default async function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Cab #', 'Gross', 'Driver 40%', 'Gas', 'Extra', 'Repairs', 'Profit'].map((h) => (
+                  {['Cab #', 'Gross', 'Driver 40%', 'Gas', 'Extra', 'Other', 'Profit'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -242,7 +263,7 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.driverPay)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.gas)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.extra)}</td>
-                    <td className={`px-4 py-3 whitespace-nowrap ${v.repairs > 0 ? 'text-gray-500' : 'text-gray-300'}`} title='Sum of Company Expenses tagged with this cab (category "Cab Repair")'>
+                    <td className={`px-4 py-3 whitespace-nowrap ${v.repairs > 0 ? 'text-gray-500' : 'text-gray-300'}`} title="Sum of every expense tagged with this cab # — from Company Expenses AND Broker Expenses">
                       {v.repairs > 0 ? `−${formatCurrency(v.repairs)}` : '—'}
                     </td>
                     <td className={`px-4 py-3 font-semibold whitespace-nowrap ${v.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(v.profit)}</td>
@@ -268,8 +289,34 @@ export default async function DashboardPage() {
           </div>
         )}
         <p className="mt-2 text-xs text-gray-400">
-          <strong>Repairs</strong> column sums Company Expenses tagged with the cab # (category &quot;Cab Repair&quot; or &quot;Vehicle Maintenance&quot;). Log them on <Link href="/company-expenses" className="underline hover:text-gray-600">Company Expenses</Link>.
+          <strong>Other</strong> column sums every expense tagged with the cab # — from <Link href="/company-expenses" className="underline hover:text-gray-600">Company Expenses</Link> (repairs, maintenance) and <Link href="/expenses" className="underline hover:text-gray-600">Broker Expenses</Link> (anything the broker took from that cab&apos;s earnings).
         </p>
+
+        {/* Per-vehicle pie charts: where each cab's gross went this month */}
+        {perVehicle.length > 0 && (
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {perVehicle.map((v) => {
+              const slices = [
+                { label: 'Driver 40%', value: v.driverPay, color: '#64748B' },
+                { label: 'Gas',        value: v.gas,       color: '#4F46E5' },
+                { label: 'Extra',      value: v.extra,     color: '#F59E0B' },
+                { label: 'Other',      value: v.repairs,   color: '#EF4444' },
+                { label: 'Profit',     value: Math.max(v.profit, 0), color: '#10B981' },
+              ];
+              const sub = v.profit >= 0
+                ? `Gross ${formatCurrency(v.gross)} · Profit ${formatCurrency(v.profit)}`
+                : `Gross ${formatCurrency(v.gross)} · Loss ${formatCurrency(v.profit)}`;
+              return (
+                <ExpenseBreakdownChart
+                  key={v.cabNumber}
+                  title={`Cab #${v.cabNumber}`}
+                  sub={sub}
+                  slices={slices}
+                />
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* =================================================================
@@ -278,6 +325,7 @@ export default async function DashboardPage() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-900">{curYear} — Year to Date</h2>
+          <DashboardPDFButton href={`/api/dashboard/yearly-pdf?year=${curYear}`} />
         </div>
         {companyCabNumbers.length === 0 ? (
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-10 text-center text-sm text-gray-400">
@@ -286,8 +334,8 @@ export default async function DashboardPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <RevenueExpenseChart points={ytd} />
-              <NetProfitLineChart   points={ytd} />
+              <RevenueExpenseChart     points={ytd} />
+              <ProfitExpenseLineChart  points={ytd} />
             </div>
             <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
               <table className="w-full text-sm">
