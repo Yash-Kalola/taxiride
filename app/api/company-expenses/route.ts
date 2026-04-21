@@ -11,25 +11,28 @@ import { parseLocalDate } from '@/lib/dates';
  */
 
 const createSchema = z.object({
-  date:     z.string().min(1),
-  amount:   z.number(),
-  category: z.string().default('OTHER'),
-  note:     z.string().default(''),
-  paid:     z.boolean().default(false),
+  date:          z.string().min(1),
+  amount:        z.number(),
+  category:      z.string().default('OTHER'),
+  vehicleNumber: z.string().default(''),     // cab # when expense is per-vehicle (e.g. repair)
+  note:          z.string().default(''),
+  paid:          z.boolean().default(false),
 });
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const month    = url.searchParams.get('month');
-  const year     = url.searchParams.get('year');
-  const category = url.searchParams.get('category');
-  const paid     = url.searchParams.get('paid');
+  const month         = url.searchParams.get('month');
+  const year          = url.searchParams.get('year');
+  const category      = url.searchParams.get('category');
+  const vehicleNumber = url.searchParams.get('vehicleNumber');
+  const paid          = url.searchParams.get('paid');
 
   try {
     const where: any = {};
-    if (month)    where.month    = parseInt(month);
-    if (year)     where.year     = parseInt(year);
-    if (category) where.category = category;
+    if (month)         where.month         = parseInt(month);
+    if (year)          where.year          = parseInt(year);
+    if (category)      where.category      = category;
+    if (vehicleNumber) where.vehicleNumber = vehicleNumber;
     if (paid === 'true')  where.paid = true;
     if (paid === 'false') where.paid = false;
 
@@ -60,13 +63,14 @@ export async function POST(request: NextRequest) {
     const expense = await prisma.companyExpense.create({
       data: {
         date,
-        amount:   d.amount,
-        category: d.category.trim() || 'OTHER',
-        note:     d.note,
-        paid:     d.paid,
-        paidDate: d.paid ? new Date() : null,
-        month:    date.getMonth() + 1,
-        year:     date.getFullYear(),
+        amount:        d.amount,
+        category:      d.category.trim() || 'OTHER',
+        vehicleNumber: d.vehicleNumber.trim(),
+        note:          d.note,
+        paid:          d.paid,
+        paidDate:      d.paid ? new Date() : null,
+        month:         date.getMonth() + 1,
+        year:          date.getFullYear(),
       },
       include: { attachments: true },
     });

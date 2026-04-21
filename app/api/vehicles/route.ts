@@ -20,7 +20,8 @@ async function recalcPendingStandRent(brokerId: string) {
   const now = new Date();
   const month = now.getMonth() + 1;
   const year  = now.getFullYear();
-  const vehicleCount = broker.vehicles.length || 1;
+  // Company-subleased cars don't pay stand rent (isCompanyCar excluded).
+  const vehicleCount = broker.vehicles.filter((v) => !v.isCompanyCar).length;
   const rate = broker.standRentAmount;
 
   // Update all PENDING stand rent for this month to reflect the new vehicle count
@@ -34,6 +35,17 @@ async function recalcPendingStandRent(brokerId: string) {
     const basePart = tx.description.replace(/ \+ \$30 late$/, '');
     // Extract week label (everything before the parentheses)
     const weekLabel = basePart.replace(/\s*\(.*\)$/, '');
+
+    // If the broker now has zero rentable vehicles, void the pending stand rent
+    // instead of recalculating to $0 (cleaner audit trail).
+    if (vehicleCount === 0) {
+      await prisma.brokerTransaction.update({
+        where: { id: tx.id },
+        data:  { status: 'VOID', description: `${basePart} (voided — no rentable vehicles)` },
+      });
+      continue;
+    }
+
     const newBase = rate * vehicleCount;
     const newAmount = hasLate ? newBase + 30 * vehicleCount : newBase;
     const newDesc = `${weekLabel} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})${hasLate ? ' + $30 late' : ''}`;

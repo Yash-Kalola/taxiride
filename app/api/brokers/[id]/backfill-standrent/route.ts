@@ -30,10 +30,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ message: 'Broker starts in the future, nothing to backfill', created: 0 });
     }
 
-    const vehicleCount = broker.vehicles.length || 1;
+    // Stand rent applies to investor vehicles only. Company-subleased cars (isCompanyCar) are excluded —
+    // the company doesn't owe stand rent on its own cars. If zero rentable, we skip creation below.
+    const vehicleCount = broker.vehicles.filter((v) => !v.isCompanyCar).length;
     const rate = broker.standRentAmount;
     let totalCreated = 0;
     const details: string[] = [];
+
+    if (vehicleCount === 0) {
+      return NextResponse.json({ message: 'Broker has no rentable vehicles (all are company-subleased) — nothing to backfill', created: 0 });
+    }
 
     // Iterate through each month from startMonth to currentMonth
     for (let m = startMonth; m <= currentMonth; m++) {

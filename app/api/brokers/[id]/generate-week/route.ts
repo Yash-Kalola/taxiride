@@ -28,10 +28,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
     if (!broker) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const activeVehicles = broker.vehicles;
-    const vehicleCount   = activeVehicles.length || 1;
-    const rate           = broker.standRentAmount;
-    const lateFee        = 30; // flat $30 per vehicle late fee
+    const activeVehicles   = broker.vehicles;
+    // Company-subleased cars don't pay stand rent — only the broker's own investor
+    // vehicles are counted. If a broker has zero rentable vehicles, no stand rent
+    // is billed (we skip creation entirely below).
+    const rentableVehicles = activeVehicles.filter((v) => !v.isCompanyCar);
+    const vehicleCount     = rentableVehicles.length;
+    const rate             = broker.standRentAmount;
+    const lateFee          = 30; // flat $30 per vehicle late fee
 
     const weekLabel = formatWeekRange(weekNumber, month, year);
 
@@ -63,18 +67,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
 
       // 2. Create new stand rent for this week at fresh rate
-      const newRent = await tx.brokerTransaction.create({
-        data: {
-          brokerId:    params.id,
-          type:        'STAND_RENT',
-          amount:      rate * vehicleCount,
-          description: `${weekLabel} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`,
-          month,
-          year,
-          status:      'PENDING',
-        },
-      });
-      const created = [newRent];
+      // If there are zero rentable vehicles (all are company-subleased), skip.
+      const created = [];
+      if (vehicleCount > 0) {
+        const newRent = await tx.brokerTransaction.create({
+          data: {
+            brokerId:    params.id,
+            type:        'STAND_RENT',
+            amount:      rate * vehicleCount,
+            description: `${weekLabel} (${vehicleCount} cab${vehicleCount !== 1 ? 's' : ''} × $${rate})`,
+            month,
+            year,
+            status:      'PENDING',
+          },
+        });
+        created.push(newRent);
+      }
 
       // 3. If week 1: auto-generate insurance for company-subleased vehicles (if not already done)
       if (weekNumber === 1) {

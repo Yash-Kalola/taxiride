@@ -4,11 +4,12 @@ import { prisma } from '@/lib/db';
 import { parseLocalDate } from '@/lib/dates';
 
 const updateSchema = z.object({
-  date:     z.string().optional(),
-  amount:   z.number().optional(),
-  category: z.string().optional(),
-  note:     z.string().optional(),
-  paid:     z.boolean().optional(),
+  date:          z.string().optional(),
+  amount:        z.number().optional(),
+  category:      z.string().optional(),
+  vehicleNumber: z.string().optional(),
+  note:          z.string().optional(),
+  paid:          z.boolean().optional(),
 });
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
@@ -46,9 +47,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       data.month = parsedDate.getMonth() + 1;
       data.year  = parsedDate.getFullYear();
     }
-    if (f.amount   !== undefined) data.amount   = f.amount;
-    if (f.category !== undefined) data.category = f.category.trim() || 'OTHER';
-    if (f.note     !== undefined) data.note     = f.note;
+    if (f.amount        !== undefined) data.amount        = f.amount;
+    if (f.category      !== undefined) data.category      = f.category.trim() || 'OTHER';
+    if (f.vehicleNumber !== undefined) data.vehicleNumber = f.vehicleNumber.trim();
+    if (f.note          !== undefined) data.note          = f.note;
 
     // paidDate tracking
     if (f.paid === true && !existing.paid) {

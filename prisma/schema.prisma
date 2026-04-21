@@ -227,24 +227,27 @@ model ExpenseAttachment {
 
 // Company-wide expenses — not tied to any broker. Things like office rent,
 // utilities, insurance, software subscriptions, advertising, etc.
-// Feeds the dashboard P&L once integrated.
+// Also holds per-vehicle costs (cab repairs) when vehicleNumber is set.
+// Feeds the dashboard P&L.
 model CompanyExpense {
-  id          String                      @id @default(cuid())
-  date        DateTime
-  amount      Float
-  category    String                      @default("OTHER")  // e.g. "Rent", "Utilities", "Insurance", etc. Free-text with UI suggestions.
-  note        String                      @default("")
-  paid        Boolean                     @default(false)
-  paidDate    DateTime?
-  month       Int                         // derived from date, for month/year filtering
-  year        Int
-  createdAt   DateTime                    @default(now())
-  updatedAt   DateTime                    @updatedAt
-  attachments CompanyExpenseAttachment[]
+  id            String                      @id @default(cuid())
+  date          DateTime
+  amount        Float
+  category      String                      @default("OTHER")  // e.g. "Rent", "Utilities", "Insurance", "Cab Repair". Free-text with UI suggestions.
+  vehicleNumber String                      @default("")       // optional cab # when the expense is for a specific vehicle (e.g. repair)
+  note          String                      @default("")
+  paid          Boolean                     @default(false)
+  paidDate      DateTime?
+  month         Int                         // derived from date, for month/year filtering
+  year          Int
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+  attachments   CompanyExpenseAttachment[]
 
   @@index([month, year])
   @@index([date])
   @@index([category])
+  @@index([vehicleNumber, month, year])
 }
 
 model CompanyExpenseAttachment {

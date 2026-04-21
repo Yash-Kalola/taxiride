@@ -12,10 +12,13 @@ import { MONTHS } from '@/lib/constants';
 // Common company-expense categories shown as suggestions — the user can
 // type any string. Kept as suggestions (datalist) rather than an enum so
 // new categories can be added without a schema change.
+// "Cab Repair" triggers the vehicle picker so per-cab repair costs roll
+// into the dashboard Per-Vehicle table.
 const CATEGORY_SUGGESTIONS = [
   'Rent',
   'Utilities',
   'Insurance',
+  'Cab Repair',
   'Vehicle Maintenance',
   'Office Supplies',
   'Advertising',
@@ -27,23 +30,28 @@ const CATEGORY_SUGGESTIONS = [
   'Other',
 ];
 
+/** Category strings that should show the per-vehicle picker. */
+const VEHICLE_TAG_CATEGORIES = new Set(['Cab Repair', 'Vehicle Maintenance']);
+
 interface Attachment {
   id: string; expenseId: string; label: string; fileName: string;
   filePath: string; fileType: string; fileSize: number; createdAt: string;
 }
 interface CompanyExpense {
   id: string; date: string; amount: number; category: string;
+  vehicleNumber: string;
   note: string; paid: boolean; paidDate: string | null;
   month: number; year: number; createdAt: string;
   attachments: Attachment[];
 }
 
 const EMPTY_FORM = {
-  date:     new Date().toISOString().split('T')[0],
-  amount:   '',
-  category: 'Rent',
-  note:     '',
-  paid:     false,
+  date:          new Date().toISOString().split('T')[0],
+  amount:        '',
+  category:      'Rent',
+  vehicleNumber: '',
+  note:          '',
+  paid:          false,
 };
 
 function formatFileSize(bytes: number): string {
@@ -53,9 +61,10 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function CompanyExpensesClient({
-  initialExpenses, initialMonth, initialYear,
+  initialExpenses, companyCabs, initialMonth, initialYear,
 }: {
   initialExpenses: CompanyExpense[];
+  companyCabs:     string[];
   initialMonth:    number;
   initialYear:     number;
 }) {
@@ -116,11 +125,12 @@ export default function CompanyExpensesClient({
   }
   function openEdit(e: CompanyExpense) {
     setForm({
-      date:     e.date.split('T')[0],
-      amount:   String(e.amount),
-      category: e.category,
-      note:     e.note,
-      paid:     e.paid,
+      date:          e.date.split('T')[0],
+      amount:        String(e.amount),
+      category:      e.category,
+      vehicleNumber: e.vehicleNumber ?? '',
+      note:          e.note,
+      paid:          e.paid,
     });
     setEditingId(e.id); setError(''); setModal('edit');
   }
@@ -128,12 +138,14 @@ export default function CompanyExpensesClient({
   async function save() {
     setSaving(true); setError('');
     try {
+      const isVehicleTagged = VEHICLE_TAG_CATEGORIES.has(form.category.trim());
       const payload = {
-        date:     form.date,
-        amount:   parseFloat(form.amount) || 0,
-        category: form.category.trim() || 'Other',
-        note:     form.note,
-        paid:     form.paid,
+        date:          form.date,
+        amount:        parseFloat(form.amount) || 0,
+        category:      form.category.trim() || 'Other',
+        vehicleNumber: isVehicleTagged ? form.vehicleNumber.trim() : '',
+        note:          form.note,
+        paid:          form.paid,
       };
       const url    = modal === 'edit' ? `/api/company-expenses/${editingId}` : '/api/company-expenses';
       const method = modal === 'edit' ? 'PUT' : 'POST';
@@ -261,6 +273,11 @@ export default function CompanyExpensesClient({
                       <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-600/20">
                         {e.category}
                       </span>
+                      {e.vehicleNumber && (
+                        <span className="ml-1.5 inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-xs font-mono font-medium text-slate-600 ring-1 ring-slate-200" title="Tagged to company cab">
+                          Cab #{e.vehicleNumber}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{formatCurrency(e.amount)}</td>
                     <td className="px-4 py-3 text-gray-600 max-w-[280px] truncate" title={e.note}>{e.note || '—'}</td>
@@ -335,8 +352,26 @@ export default function CompanyExpensesClient({
             <datalist id="company-expense-categories">
               {CATEGORY_SUGGESTIONS.map((c) => <option key={c} value={c} />)}
             </datalist>
-            <p className="mt-1 text-xs text-gray-400">Type any category — suggestions appear as you type.</p>
+            <p className="mt-1 text-xs text-gray-400">Type any category — suggestions appear as you type. Pick &quot;Cab Repair&quot; to tag it to a specific company cab.</p>
           </div>
+
+          {/* Vehicle picker — shown when category is Cab Repair / Vehicle Maintenance */}
+          {VEHICLE_TAG_CATEGORIES.has(form.category.trim()) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Company Cab</label>
+              {companyCabs.length === 0 ? (
+                <p className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">
+                  No company cars yet. Mark a car as Company on the Vehicles page to tag repairs.
+                </p>
+              ) : (
+                <Select value={form.vehicleNumber} onChange={(e) => setForm((f) => ({ ...f, vehicleNumber: e.target.value }))}>
+                  <option value="">(none — count as general expense)</option>
+                  {companyCabs.map((c) => <option key={c} value={c}>Cab #{c}</option>)}
+                </Select>
+              )}
+              <p className="mt-1 text-xs text-gray-400">Tagged cab will show this repair in its Per-Vehicle Profit row on the dashboard.</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reason / Note</label>

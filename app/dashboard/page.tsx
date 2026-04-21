@@ -15,14 +15,17 @@ export const dynamic = 'force-dynamic';
  *   3. Year-to-date trend (12 months of revenue / expenses / profit)
  *   4. Low-priority: invoice summary, Companies/Rides links
  *
- * Formulas are a rough first draft — will be refined with Yash:
- *   - Vehicle Profit = Σ(gross) − Σ(driver 40%) − Σ(gas) − Σ(call) − Σ(extra)
- *     (debit fee is ignored for now per Yash's description; will add back later if wanted)
+ * Formulas per Yash's April 2026 spec:
+ *   - Vehicle Profit = Σ(gross − driver 40% − gas − call − extra − repairs)
+ *     (debit fee is not subtracted here — it's a processor fee the company
+ *     absorbs; will add back if Yash changes his mind)
  *   - Broker Profit  = Σ(broker transactions PAID+PENDING, excluding PAYOUT)
- *     − Σ(PAYOUT transactions). Stand rent includes company-subleased
- *     vehicles today — flagged on the card; pending fix from Yash.
- *   - Other Expense  = Σ(CompanyExpense for month)
- *   - Cab Repairs    = not tracked yet. Shown as "—" until Yash confirms source.
+ *     − Σ(PAYOUT transactions). Stand rent is NOW correctly excluding
+ *     company-subleased vehicles going forward (generate-week.ts fix).
+ *   - Other Expense  = Σ(CompanyExpense for month WHERE vehicleNumber = '')
+ *     (vehicle-tagged expenses already counted inside Vehicle Profit)
+ *   - Cab Repairs    = Σ(CompanyExpense WHERE vehicleNumber = cab AND
+ *     category IN {Cab Repair, Vehicle Maintenance}).
  */
 export default async function DashboardPage() {
   const now      = new Date();
@@ -43,7 +46,7 @@ export default async function DashboardPage() {
   // For the yearly trend, pull every month of the current year (Jan → Dec).
   const ytdMonths: { month: number; year: number }[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, year: curYear }));
 
-  const [ytdSheets, ytdCompanyExpenses, brokerTxsMonth, companyExpensesMonth, curSheets] = await Promise.all([
+  const [ytdSheets, ytdCompanyExpenses, brokerTxsMonth, companyExpensesMonth, curSheets, curRepairs] = await Promise.all([
     companyCabNumbers.length > 0
       ? prisma.dailySheet.findMany({
           where: { vehicleNumber: { in: companyCabNumbers }, year: curYear },
@@ -56,16 +59,16 @@ export default async function DashboardPage() {
       : Promise.resolve([] as any[]),
     prisma.companyExpense.findMany({
       where: { year: curYear },
-      select: { month: true, year: true, amount: true },
-    }).catch(() => [] as { month: number; year: number; amount: number }[]),
+      select: { month: true, year: true, amount: true, vehicleNumber: true },
+    }).catch(() => [] as { month: number; year: number; amount: number; vehicleNumber: string }[]),
     prisma.brokerTransaction.findMany({
       where: { month: curMonth, year: curYear, status: { not: 'VOID' } },
       select: { amount: true, type: true },
     }).catch(() => [] as { amount: number; type: string }[]),
     prisma.companyExpense.findMany({
       where: { month: curMonth, year: curYear },
-      select: { amount: true },
-    }).catch(() => [] as { amount: number }[]),
+      select: { amount: true, vehicleNumber: true },
+    }).catch(() => [] as { amount: number; vehicleNumber: string }[]),
     companyCabNumbers.length > 0
       ? prisma.dailySheet.findMany({
           where: { vehicleNumber: { in: companyCabNumbers }, month: curMonth, year: curYear },
@@ -75,6 +78,15 @@ export default async function DashboardPage() {
           },
         })
       : Promise.resolve([] as any[]),
+    companyCabNumbers.length > 0
+      ? prisma.companyExpense.findMany({
+          where: {
+            vehicleNumber: { in: companyCabNumbers },
+            month: curMonth, year: curYear,
+          },
+          select: { vehicleNumber: true, amount: true },
+        }).catch(() => [] as { vehicleNumber: string; amount: number }[])
+      : Promise.resolve([] as { vehicleNumber: string; amount: number }[]),
   ]);
 
   // --- Current-month per-vehicle stats ---
@@ -89,13 +101,15 @@ export default async function DashboardPage() {
     profit:     number; // gross − driverPay − gas − call − extra − repairs
   }
   const perVehicle: VehicleStats[] = companyCabNumbers.map((cab) => {
-    const sheets = curSheets.filter((s) => s.vehicleNumber === cab);
+    const sheets  = curSheets.filter((s) => s.vehicleNumber === cab);
+    const repairs = curRepairs
+      .filter((r) => r.vehicleNumber === cab)
+      .reduce((a, r) => a + r.amount, 0);
     const gross     = sheets.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = sheets.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = sheets.reduce((a, s) => a + s.gasDeduction,          0);
     const call      = sheets.reduce((a, s) => a + s.callChargeDeduction,   0);
     const extra     = sheets.reduce((a, s) => a + s.extraExpenseDeduction, 0);
-    const repairs   = 0;
     return {
       cabNumber: cab,
       gross, driverPay, gas, call, extra, repairs,
@@ -110,7 +124,12 @@ export default async function DashboardPage() {
   const brokerOutflow = brokerTxsMonth.filter((t) => t.type === 'PAYOUT').reduce((a, t) => a + t.amount, 0);
   const brokerProfit  = brokerInflow - brokerOutflow;
 
-  const otherExpense  = companyExpensesMonth.reduce((a, x) => a + x.amount, 0);
+  // Per-vehicle repairs are already subtracted inside Vehicle Profit, so
+  // exclude vehicleNumber-tagged expenses from "Other Expense" to avoid
+  // double-counting. Untagged (general) expenses — rent, utilities — go here.
+  const otherExpense  = companyExpensesMonth
+    .filter((x) => !x.vehicleNumber)
+    .reduce((a, x) => a + x.amount, 0);
   const totalProfit   = vehicleProfit + brokerProfit - otherExpense;
 
   // --- Year-to-date trend (12 rows, one per month) ---
@@ -122,14 +141,19 @@ export default async function DashboardPage() {
     const gas       = ss.reduce((a, s) => a + s.gasDeduction,          0);
     const call      = ss.reduce((a, s) => a + s.callChargeDeduction,   0);
     const extra     = ss.reduce((a, s) => a + s.extraExpenseDeduction, 0);
-    const companyExp = xs.reduce((a, x) => a + x.amount, 0);
-    const vehicleP  = gross - driverPay - gas - call - extra;
+    // Per-vehicle repairs already baked into Vehicle Profit via curRepairs;
+    // carExpenses here covers the yearly chart only and includes repairs so
+    // the trend line reflects every cost. Other Expense excludes them to
+    // avoid double-counting in the profit subtotal.
+    const repairs   = xs.filter((x) => x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
+    const otherExp  = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
+    const vehicleP  = gross - driverPay - gas - call - extra - repairs;
     return {
       month: m.month, year: m.year,
       revenue:         gross,
-      carExpenses:     gas + call + extra,
-      companyExpenses: companyExp,
-      companyNet:      vehicleP - companyExp,
+      carExpenses:     gas + call + extra + repairs,
+      companyExpenses: otherExp,
+      companyNet:      vehicleP - otherExp,
     };
   });
 
@@ -222,7 +246,9 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.gas)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.call)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.extra)}</td>
-                    <td className="px-4 py-3 text-gray-300 whitespace-nowrap" title="Cab repairs not tracked yet">—</td>
+                    <td className={`px-4 py-3 whitespace-nowrap ${v.repairs > 0 ? 'text-gray-500' : 'text-gray-300'}`} title='Sum of Company Expenses tagged with this cab (category "Cab Repair")'>
+                      {v.repairs > 0 ? `−${formatCurrency(v.repairs)}` : '—'}
+                    </td>
                     <td className={`px-4 py-3 font-semibold whitespace-nowrap ${v.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(v.profit)}</td>
                   </tr>
                 ))}
@@ -235,7 +261,11 @@ export default async function DashboardPage() {
                   <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.gas,       0))}</td>
                   <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.call,      0))}</td>
                   <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.extra,     0))}</td>
-                  <td className="px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">—</td>
+                  <td className={`px-4 py-3 font-semibold whitespace-nowrap ${perVehicle.reduce((a, v) => a + v.repairs, 0) > 0 ? 'text-gray-500' : 'text-gray-300'}`}>
+                    {perVehicle.reduce((a, v) => a + v.repairs, 0) > 0
+                      ? `−${formatCurrency(perVehicle.reduce((a, v) => a + v.repairs, 0))}`
+                      : '—'}
+                  </td>
                   <td className={`px-4 py-3 font-bold whitespace-nowrap ${vehicleProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(vehicleProfit)}</td>
                 </tr>
               </tfoot>
@@ -243,7 +273,7 @@ export default async function DashboardPage() {
           </div>
         )}
         <p className="mt-2 text-xs text-gray-400">
-          <strong>Repairs</strong> column is a placeholder — not tracked yet. Tell me where this data should live (new daily-sheet field or vehicle-tagged Company Expense) and I&apos;ll wire it in.
+          <strong>Repairs</strong> column sums Company Expenses tagged with the cab # (category &quot;Cab Repair&quot; or &quot;Vehicle Maintenance&quot;). Log them on <Link href="/company-expenses" className="underline hover:text-gray-600">Company Expenses</Link>.
         </p>
       </section>
 
