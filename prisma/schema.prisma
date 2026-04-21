@@ -101,6 +101,7 @@ model Broker {
   id              String              @id @default(cuid())
   name            String
   phone           String              @default("")
+  email           String              @default("")
   billingDay      Int                 @default(1)    // day of month (1–31) when monthly charges auto-generate
   standRentAmount Float               @default(200)  // weekly stand rent base rate per vehicle
   startDate       DateTime
@@ -276,6 +277,7 @@ model Driver {
   id            String              @id @default(cuid())
   name          String
   phone         String              @default("")
+  email         String              @default("")
   licenseNumber String              @default("")
   isActive      Boolean             @default(true)
   startDate     DateTime
@@ -374,6 +376,43 @@ model User {
   allowedPages String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Configurable "From" addresses. The admin adds them here, and then
+// anywhere the app sends mail (invoice send/resend, driver report,
+// broker statement) the user can pick which sender to use. All
+// addresses route through the same SMTP transport (lib/email.ts);
+// the SMTP server must permit sending as each address.
+model EmailSender {
+  id        String   @id @default(cuid())
+  label     String                   // e.g. "Accounting"
+  email     String   @unique         // e.g. "accounts@vetstaxis.ca"
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isDefault])
+}
+
+// Audit trail for every outbound email. Shown as "history" on driver /
+// broker detail pages and used to drive the "Sent on …" status chip.
+model EmailLog {
+  id             String   @id @default(cuid())
+  recipientType  String                   // "DRIVER" | "BROKER" | "INVOICE"
+  recipientId    String                   // driver id / broker id / invoice id
+  recipientEmail String
+  fromAddress    String                   // the "From" address used
+  subject        String
+  month          Int?                     // 1-12 (when applicable)
+  year           Int?                     // 2024+ (when applicable)
+  sentAt         DateTime @default(now())
+  sentById       String?                  // User.id of the staff member who clicked Send
+  status         String   @default("SENT") // "SENT" | "FAILED"
+  error          String   @default("")
+
+  @@index([recipientType, recipientId])
+  @@index([recipientType, recipientId, month, year])
+  @@index([sentAt])
 }
 
 // Singleton: only ever one row (id = "default"). Holds the editable

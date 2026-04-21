@@ -24,6 +24,7 @@ export const PAGES: PageDef[] = [
   { key: 'overview',         path: '/overview',         label: 'Overview' },
   { key: 'import',           path: '/import',           label: 'Import' },
   { key: 'settings-email',   path: '/settings/email',   label: 'Email Template' },
+  { key: 'settings-senders', path: '/settings/senders', label: 'Email Senders',    adminOnly: true },
   { key: 'settings-users',   path: '/settings/users',   label: 'Users',            adminOnly: true },
 ];
 

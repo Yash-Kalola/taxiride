@@ -6,6 +6,7 @@ import { parseLocalDate } from '@/lib/dates';
 const createSchema = z.object({
   name:          z.string().min(1),
   phone:         z.string().default(''),
+  email:         z.string().default(''),
   licenseNumber: z.string().default(''),
   startDate:     z.string().min(1),
 });
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       data: {
         name:          parsed.data.name,
         phone:         parsed.data.phone,
+        email:         parsed.data.email,
         licenseNumber: parsed.data.licenseNumber,
         startDate,
         isActive:      true,

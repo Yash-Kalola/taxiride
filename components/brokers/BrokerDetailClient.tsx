@@ -1,5 +1,12 @@
 'use client';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import SendEmailModal from '@/components/email/SendEmailModal';
+
+interface EmailLogRow {
+  id: string; recipientEmail: string; fromAddress: string; subject: string;
+  month: number | null; year: number | null; sentAt: string;
+  status: string; error: string;
+}
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -26,7 +33,7 @@ interface BrokerExpense { id: string; cabNumber: string; date: string; amount: n
 interface RecurringCharge { id: string; type: string; amount: number; description: string; dayOfMonth: number; isActive: boolean; }
 interface BrokerRide { id: string; vehicleNumber: string; dateTime: string; amount: number; passenger: string; pickupLocation: string; dropoffLocation: string; voided: boolean; }
 interface Broker {
-  id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
+  id: string; name: string; phone: string; email: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
   vehicles: BrokerVehicle[];
@@ -71,7 +78,7 @@ const EMPTY_TX = {
   year:  String(new Date().getFullYear()),
 };
 
-const EMPTY_BROKER = { name: '', phone: '', billingDay: '1', standRentAmount: '200', startDate: '' };
+const EMPTY_BROKER = { name: '', phone: '', email: '', billingDay: '1', standRentAmount: '200', startDate: '' };
 
 
 function ordinal(n: number): string {
@@ -97,6 +104,10 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   // --- Rides linked via cab number ---
   const [brokerRides, setBrokerRides] = useState<BrokerRide[]>([]);
   const [ridesLoading, setRidesLoading] = useState(false);
+  // Email statement state
+  const [statementModalOpen, setStatementModalOpen] = useState(false);
+  const [emailHistory,       setEmailHistory]       = useState<EmailLogRow[]>([]);
+  const [historyLoaded,      setHistoryLoaded]      = useState(false);
   // Inline-edit state: which ride is being edited + the working values.
   const [editingRideId, setEditingRideId] = useState<string | null>(null);
   const [rideEdit,      setRideEdit]      = useState<{ pickupLocation: string; dropoffLocation: string; amount: string }>({ pickupLocation: '', dropoffLocation: '', amount: '' });
@@ -255,6 +266,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
   }
 
   // --- Fetch rides linked via cab number (re-fetches when viewMonth/viewYear changes) ---
+  const loadEmailHistory = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/email-log?recipientType=BROKER&recipientId=${broker.id}`);
+      if (res.ok) setEmailHistory(await res.json());
+    } finally {
+      setHistoryLoaded(true);
+    }
+  }, [broker.id]);
+  useEffect(() => { loadEmailHistory(); }, [loadEmailHistory]);
+
   const fetchBrokerRides = useCallback(async () => {
     if (broker.vehicles.length === 0) { setBrokerRides([]); return; }
     setRidesLoading(true);
@@ -382,6 +403,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
     setBrokerForm({
       name:            broker.name,
       phone:           broker.phone,
+      email:           broker.email,
       billingDay:      String(broker.billingDay),
       standRentAmount: String(broker.standRentAmount ?? 200),
       startDate:       broker.startDate ? broker.startDate.split('T')[0] : '',
@@ -397,6 +419,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
       const payload: Record<string, unknown> = {
         name:            brokerForm.name.trim() || broker.name,
         phone:           brokerForm.phone.trim(),
+        email:           brokerForm.email.trim(),
         startDate:       brokerForm.startDate || undefined,
         billingDay:      parseInt(brokerForm.billingDay) || 1,
         standRentAmount: newRate,
@@ -669,10 +692,14 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Phone</p>
             <p className="mt-1 text-sm font-medium text-gray-900">{broker.phone || '—'}</p>
+          </div>
+          <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Email</p>
+            <p className="mt-1 text-sm font-medium text-gray-900 truncate" title={broker.email}>{broker.email || '—'}</p>
           </div>
           <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Start Date</p>
@@ -822,6 +849,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
             >
               Download Statement
+            </button>
+            <button
+              onClick={() => {
+                if (!broker.email) { alert('Add an email for this broker first (Edit button).'); return; }
+                setStatementModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!broker.email ? 'No email on file — edit the broker to add one' : `Email ${MONTHS[viewMonth - 1]} statement to ${broker.email}`}
+            >
+              Email Statement
             </button>
             <Link
               href={`/expenses?broker=${broker.id}`}
@@ -1227,6 +1264,16 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                value={brokerForm.email}
+                onChange={(e) => setBrokerForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="For emailing the monthly statement"
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
               <input
                 type="date"
@@ -1399,6 +1446,54 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
           </div>
         </div>
       </Modal>
+
+      {/* Email history */}
+      {historyLoaded && emailHistory.length > 0 && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">Email History</h2>
+            <p className="mt-0.5 text-xs text-gray-500">Past monthly statements sent to this broker.</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                {['Sent', 'Period', 'To', 'From', 'Subject', 'Status'].map((h) => (
+                  <th key={h} className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {emailHistory.map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50">
+                  <td className="px-5 py-2.5 text-xs text-gray-500 whitespace-nowrap">{format(new Date(row.sentAt), 'MMM d, yyyy · h:mm a')}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-700">{row.month && row.year ? `${MONTHS[row.month - 1]} ${row.year}` : '—'}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-700">{row.recipientEmail}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-500">{row.fromAddress}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-500 max-w-[260px] truncate" title={row.subject}>{row.subject}</td>
+                  <td className="px-5 py-2.5">
+                    {row.status === 'SENT'
+                      ? <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Sent</span>
+                      : <span title={row.error} className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Failed</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <SendEmailModal
+        open={statementModalOpen}
+        title={`Email ${broker.name}'s monthly statement`}
+        description={`${MONTHS[viewMonth - 1]} ${viewYear} — PDF attached automatically.`}
+        endpoint={`/api/brokers/${broker.id}/email-statement`}
+        defaultTo={broker.email}
+        defaultSubject={`Monthly Statement — ${MONTHS[viewMonth - 1]} ${viewYear}`}
+        defaultMessage={`Hello ${broker.name},\n\nPlease find your monthly broker statement for ${MONTHS[viewMonth - 1]} ${viewYear} attached.\n\nThank you.`}
+        extraPayload={{ month: viewMonth, year: viewYear }}
+        onClose={() => setStatementModalOpen(false)}
+        onSent={() => { setStatementModalOpen(false); loadEmailHistory(); }}
+      />
 
     </>
   );

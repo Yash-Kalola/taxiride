@@ -61,11 +61,15 @@ export async function middleware(req: NextRequest) {
   // Admin has full access.
   if (session.admin) return NextResponse.next();
 
-  // /api/users and /api/auth/setup paths: admin-only (already returned above for admin)
-  if (pathname.startsWith('/api/users') || pathname === '/api/auth/setup') {
+  // /api/users, /api/settings/senders, /api/auth/setup: admin-only (already returned above for admin)
+  if (
+    pathname.startsWith('/api/users') ||
+    pathname.startsWith('/api/settings/senders') ||
+    pathname === '/api/auth/setup'
+  ) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-  if (pathname.startsWith('/settings/users')) {
+  if (pathname.startsWith('/settings/users') || pathname.startsWith('/settings/senders')) {
     const url = req.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);

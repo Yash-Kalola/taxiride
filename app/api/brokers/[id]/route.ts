@@ -6,6 +6,7 @@ import { parseLocalDate } from '@/lib/dates';
 const updateSchema = z.object({
   name:                    z.string().min(1).optional(),
   phone:                   z.string().optional(),
+  email:                   z.string().trim().optional(),
   billingDay:              z.number().int().min(1).max(31).optional(),
   standRentAmount:         z.number().min(0).optional(),
   startDate:               z.string().optional(),

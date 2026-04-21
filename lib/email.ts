@@ -139,8 +139,58 @@ export function renderInvoiceEmailHTML(params: {
   return { subject, html, text };
 }
 
+function smtpConfigured(): boolean {
+  return !!(process.env.SMTP_HOST && process.env.SMTP_PASS);
+}
+
+function getTransport() {
+  return nodemailer.createTransport({
+    host:   process.env.SMTP_HOST,
+    port:   parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+/**
+ * Generic attachment-email sender. Used for driver reports / broker statements
+ * and any other PDF-by-email flow. `from` override is optional and defaults to
+ * the configured EMAIL_FROM / SMTP_USER.
+ */
+export async function sendEmailWithPDF(params: {
+  to:          string;
+  from?:       string;
+  subject:     string;
+  html:        string;
+  text:        string;
+  pdfBuffer:   Buffer;
+  pdfFilename: string;
+}): Promise<void> {
+  if (!smtpConfigured()) {
+    console.log(`[EMAIL] SMTP not configured — skipping send to ${params.to} (${params.subject})`);
+    return;
+  }
+  const transporter = getTransport();
+  await transporter.sendMail({
+    from:    params.from || process.env.EMAIL_FROM || process.env.SMTP_USER,
+    to:      params.to,
+    subject: params.subject,
+    text:    params.text,
+    html:    params.html,
+    attachments: [{
+      filename:    params.pdfFilename,
+      content:     params.pdfBuffer,
+      contentType: 'application/pdf',
+    }],
+  });
+}
+
 export async function sendInvoiceEmail(params: {
   to: string;
+  from?: string;
   invoiceNumber: number;
   month: string;
   year: number;
@@ -150,7 +200,7 @@ export async function sendInvoiceEmail(params: {
   companyName?: string;
 }): Promise<void> {
   // Guard: if SMTP credentials aren't configured yet, log and skip silently
-  if (!process.env.SMTP_HOST || !process.env.SMTP_PASS) {
+  if (!smtpConfigured()) {
     console.log(
       `[EMAIL] SMTP not configured — skipping send for Invoice #${params.invoiceNumber} to ${params.to}`
     );
@@ -170,18 +220,9 @@ export async function sendInvoiceEmail(params: {
     },
   });
 
-  const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-
+  const transporter = getTransport();
   await transporter.sendMail({
-    from:    process.env.EMAIL_FROM ?? process.env.SMTP_USER,
+    from:    params.from || process.env.EMAIL_FROM || process.env.SMTP_USER,
     to:      params.to,
     subject,
     text,

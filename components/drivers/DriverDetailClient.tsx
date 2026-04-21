@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import Button from '@/components/ui/Button';
@@ -8,9 +8,16 @@ import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import PageHeader from '@/components/ui/PageHeader';
+import SendEmailModal from '@/components/email/SendEmailModal';
 import { formatCurrency } from '@/lib/tax';
 import { computePayBreakdown, formatPeriodLabel } from '@/lib/driver-pay';
 import { MONTHS } from '@/lib/constants';
+
+interface EmailLogRow {
+  id: string; recipientEmail: string; fromAddress: string; subject: string;
+  month: number | null; year: number | null; sentAt: string;
+  status: string; error: string;
+}
 
 interface Assignment {
   id: string; vehicleNumber: string; shift: 'MORNING' | 'EVENING';
@@ -31,7 +38,7 @@ interface Payout {
   status: 'DRAFT' | 'PAID'; paidDate: string | null; notes: string;
 }
 interface Driver {
-  id: string; name: string; phone: string; licenseNumber: string;
+  id: string; name: string; phone: string; email: string; licenseNumber: string;
   isActive: boolean; startDate: string; endDate: string | null;
   assignments: Assignment[]; dailySheets: DailySheet[]; payouts: Payout[];
 }
@@ -68,11 +75,26 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
   // Edit driver modal
   const [editDriverOpen, setEditDriverOpen] = useState(false);
   const [driverForm, setDriverForm] = useState({
-    name: driver.name, phone: driver.phone, licenseNumber: driver.licenseNumber,
+    name: driver.name, phone: driver.phone, email: driver.email, licenseNumber: driver.licenseNumber,
     startDate: driver.startDate ? driver.startDate.split('T')[0] : '',
   });
   const [savingDriver, setSavingDriver] = useState(false);
   const [driverError,  setDriverError]  = useState('');
+
+  // Email report state
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailHistory,   setEmailHistory]   = useState<EmailLogRow[]>([]);
+  const [historyLoaded,  setHistoryLoaded]  = useState(false);
+
+  async function loadEmailHistory() {
+    try {
+      const res = await fetch(`/api/email-log?recipientType=DRIVER&recipientId=${driver.id}`);
+      if (res.ok) setEmailHistory(await res.json());
+    } finally {
+      setHistoryLoaded(true);
+    }
+  }
+  useEffect(() => { loadEmailHistory(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [driver.id]);
 
   const currentAssignment = driver.assignments.find((a) => a.isActive) ?? null;
 
@@ -245,8 +267,9 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
       {/* Info card */}
       <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-6">
         <div className="flex items-start justify-between gap-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-3 flex-1">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-3 flex-1">
             <Info label="Phone"   value={driver.phone || '—'} />
+            <Info label="Email"   value={driver.email || '—'} />
             <Info label="License" value={driver.licenseNumber || '—'} mono />
             <Info label="Vehicle" value={currentAssignment ? `#${currentAssignment.vehicleNumber}` : '— Unassigned —'} mono />
             <div>
@@ -259,7 +282,7 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <div className="flex items-start gap-2 shrink-0">
             <Badge variant={driver.isActive ? 'active' : 'inactive'} />
             <Button size="sm" variant="ghost" onClick={() => { setDriverForm({
-              name: driver.name, phone: driver.phone, licenseNumber: driver.licenseNumber,
+              name: driver.name, phone: driver.phone, email: driver.email, licenseNumber: driver.licenseNumber,
               startDate: driver.startDate ? driver.startDate.split('T')[0] : '',
             }); setDriverError(''); setEditDriverOpen(true); }}>Edit</Button>
           </div>
@@ -287,6 +310,17 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
             title={sheetsInMonth.length === 0 ? 'No sheets to report this month' : `Download monthly report for ${MONTHS[viewMonth - 1]} ${viewYear}`}
           >
             Monthly Report
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (!driver.email) { alert('Add an email for this driver first (Edit button).'); return; }
+              setEmailModalOpen(true);
+            }}
+            disabled={sheetsInMonth.length === 0}
+            title={!driver.email ? 'No email on file — edit the driver to add one' : `Email ${MONTHS[viewMonth - 1]} report to ${driver.email}`}
+          >
+            Email Report
           </Button>
           <Button variant="primary" onClick={openAddSheet} disabled={!driver.isActive}>+ Add Daily Sheet</Button>
         </div>
@@ -519,9 +553,12 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           <div className="grid grid-cols-2 gap-4">
             <Input label="Phone" value={driverForm.phone}
               onChange={(e) => setDriverForm((f) => ({ ...f, phone: e.target.value }))} />
-            <Input label="License #" value={driverForm.licenseNumber}
-              onChange={(e) => setDriverForm((f) => ({ ...f, licenseNumber: e.target.value }))} />
+            <Input label="Email" type="email" value={driverForm.email}
+              onChange={(e) => setDriverForm((f) => ({ ...f, email: e.target.value }))}
+              hint="Used to send this driver their monthly report" />
           </div>
+          <Input label="License #" value={driverForm.licenseNumber}
+            onChange={(e) => setDriverForm((f) => ({ ...f, licenseNumber: e.target.value }))} />
           <Input label="Start Date" type="date" value={driverForm.startDate}
             onChange={(e) => setDriverForm((f) => ({ ...f, startDate: e.target.value }))} />
           {driverError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{driverError}</p>}
@@ -533,6 +570,54 @@ export default function DriverDetailClient({ initialDriver }: { initialDriver: D
           </div>
         </div>
       </Modal>
+
+      {/* Email history — shows past monthly-report sends to this driver */}
+      {historyLoaded && emailHistory.length > 0 && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">Email History</h2>
+            <p className="mt-0.5 text-xs text-gray-500">Past monthly reports sent to this driver.</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                {['Sent', 'Period', 'To', 'From', 'Subject', 'Status'].map((h) => (
+                  <th key={h} className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {emailHistory.map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50">
+                  <td className="px-5 py-2.5 text-xs text-gray-500 whitespace-nowrap">{format(new Date(row.sentAt), 'MMM d, yyyy · h:mm a')}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-700">{row.month && row.year ? `${MONTHS[row.month - 1]} ${row.year}` : '—'}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-700">{row.recipientEmail}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-500">{row.fromAddress}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-500 max-w-[260px] truncate" title={row.subject}>{row.subject}</td>
+                  <td className="px-5 py-2.5">
+                    {row.status === 'SENT'
+                      ? <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Sent</span>
+                      : <span title={row.error} className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Failed</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <SendEmailModal
+        open={emailModalOpen}
+        title={`Email ${driver.name}'s monthly report`}
+        description={`${MONTHS[viewMonth - 1]} ${viewYear} — PDF attached automatically.`}
+        endpoint={`/api/drivers/${driver.id}/email-report`}
+        defaultTo={driver.email}
+        defaultSubject={`Monthly Driver Report — ${MONTHS[viewMonth - 1]} ${viewYear}`}
+        defaultMessage={`Hello ${driver.name},\n\nPlease find your monthly driver report for ${MONTHS[viewMonth - 1]} ${viewYear} attached.\n\nThank you.`}
+        extraPayload={{ month: viewMonth, year: viewYear }}
+        onClose={() => setEmailModalOpen(false)}
+        onSent={() => { setEmailModalOpen(false); loadEmailHistory(); }}
+      />
     </>
   );
 }

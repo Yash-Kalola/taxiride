@@ -6,6 +6,7 @@ import { parseLocalDate } from '@/lib/dates';
 const createSchema = z.object({
   name:            z.string().min(1),
   phone:           z.string().default(''),
+  email:           z.string().default(''),
   billingDay:      z.number().int().min(1).max(31).default(1),
   standRentAmount: z.number().min(0).default(200),
   startDate:       z.string().min(1), // ISO date string from frontend
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
       data: {
         name:            parsed.data.name,
         phone:           parsed.data.phone,
+        email:           parsed.data.email,
         billingDay:      parsed.data.billingDay,
         standRentAmount: parsed.data.standRentAmount,
         startDate,
