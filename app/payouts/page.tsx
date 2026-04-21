@@ -1,33 +1,32 @@
 import { prisma } from '@/lib/db';
 import PayoutsClient from '@/components/payouts/PayoutsClient';
+import { findUnifiedPayouts } from '@/lib/payout-virtual';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PayoutsPage() {
   const today = new Date();
-  // Default to DRAFT (unpaid) payouts — paid records just clutter the view
-  // during normal operation. The user can flip the Status filter to see all.
-  const [payoutsRaw, driversRaw] = await Promise.all([
-    prisma.driverPayout.findMany({
-      where: { month: today.getMonth() + 1, year: today.getFullYear(), status: 'DRAFT' },
-      orderBy: [{ payoutPeriod: 'asc' }, { createdAt: 'desc' }],
-      include: { driver: { select: { id: true, name: true } } },
-    }).catch(() => []),
+  const month = today.getMonth() + 1;
+  const year  = today.getFullYear();
+
+  // Default filter on the client: DRAFT + current month. Include virtual rows
+  // so every active driver with sheets in this month shows up, even if they
+  // don't yet have a persisted DriverPayout record.
+  const [rows, driversRaw] = await Promise.all([
+    findUnifiedPayouts({ month, year, status: 'DRAFT', includeVirtual: true }).catch(() => []),
     prisma.driver.findMany({
       where: { isActive: true }, orderBy: { name: 'asc' },
       select: { id: true, name: true },
     }).catch(() => []),
   ]);
 
-  const payouts = JSON.parse(JSON.stringify(payoutsRaw));
-
   return (
     <div className="px-8 py-8 space-y-6">
       <PayoutsClient
-        initialPayouts={payouts}
+        initialPayouts={JSON.parse(JSON.stringify(rows))}
         drivers={driversRaw}
-        initialMonth={today.getMonth() + 1}
-        initialYear={today.getFullYear()}
+        initialMonth={month}
+        initialYear={year}
       />
     </div>
   );

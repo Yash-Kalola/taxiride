@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getPeriodRange } from '@/lib/driver-pay';
+import { findUnifiedPayouts } from '@/lib/payout-virtual';
 
 /**
- * GET  /api/payouts?month=4&year=2026&period=1&status=DRAFT   — list payouts
+ * GET  /api/payouts?month=4&year=2026&period=1&status=DRAFT&includeVirtual=1
+ *      — list payouts; when includeVirtual=1 + month + year, active drivers
+ *      without a payout row also appear with live totals (status="VIRTUAL").
  * POST /api/payouts  { driverId, payoutPeriod, month, year } — generate for ONE driver
  */
 
@@ -18,26 +21,23 @@ const generateSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const month    = url.searchParams.get('month');
-  const year     = url.searchParams.get('year');
-  const period   = url.searchParams.get('period');
-  const status   = url.searchParams.get('status');
-  const driverId = url.searchParams.get('driverId');
+  const month          = url.searchParams.get('month');
+  const year           = url.searchParams.get('year');
+  const period         = url.searchParams.get('period');
+  const status         = url.searchParams.get('status');
+  const driverId       = url.searchParams.get('driverId');
+  const includeVirtual = url.searchParams.get('includeVirtual') === '1';
 
   try {
-    const where: any = {};
-    if (month)    where.month         = parseInt(month);
-    if (year)     where.year          = parseInt(year);
-    if (period)   where.payoutPeriod  = parseInt(period);
-    if (status === 'DRAFT' || status === 'PAID') where.status = status;
-    if (driverId) where.driverId      = driverId;
-
-    const payouts = await prisma.driverPayout.findMany({
-      where,
-      orderBy: [{ year: 'desc' }, { month: 'desc' }, { payoutPeriod: 'desc' }, { createdAt: 'desc' }],
-      include: { driver: { select: { id: true, name: true } } },
+    const rows = await findUnifiedPayouts({
+      month:          month  ? parseInt(month)  : undefined,
+      year:           year   ? parseInt(year)   : undefined,
+      period:         period ? (parseInt(period) as 1 | 2 | 3) : undefined,
+      status:         status === 'DRAFT' || status === 'PAID' ? status : undefined,
+      driverId:       driverId ?? undefined,
+      includeVirtual,
     });
-    return NextResponse.json(payouts);
+    return NextResponse.json(rows);
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

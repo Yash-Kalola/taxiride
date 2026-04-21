@@ -12,10 +12,11 @@ import { MONTHS } from '@/lib/constants';
 
 interface DriverRef { id: string; name: string; }
 interface Payout {
-  id: string; driverId: string; payoutPeriod: number; month: number; year: number;
+  id: string | null;            // null => virtual row (no DB record yet)
+  driverId: string; payoutPeriod: number; month: number; year: number;
   periodStart: string; periodEnd: string;
   totalGross: number; totalDeductions: number; totalNetPay: number;
-  status: 'DRAFT' | 'PAID'; paidDate: string | null;
+  status: 'DRAFT' | 'PAID' | 'VIRTUAL'; paidDate: string | null;
   driver: DriverRef;
 }
 
@@ -42,9 +43,27 @@ export default function PayoutsClient({
     if (filterPeriod) params.set('period', filterPeriod);
     if (filterStatus) params.set('status', filterStatus);
     if (filterDriver) params.set('driverId', filterDriver);
+    params.set('includeVirtual', '1');
     const res = await fetch('/api/payouts?' + params.toString());
     if (res.ok) setPayouts(await res.json());
     setLoading(false);
+  }
+
+  /** Materialize a virtual row by calling POST /api/payouts. Returns the new id. */
+  async function materialize(p: Payout): Promise<string | null> {
+    const res = await fetch('/api/payouts', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        driverId:     p.driverId,
+        payoutPeriod: p.payoutPeriod,
+        month:        p.month,
+        year:         p.year,
+      }),
+    });
+    if (!res.ok) { alert('Failed to create payout record'); return null; }
+    const created = await res.json();
+    return created?.id ?? null;
   }
 
   useEffect(() => { refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filterMonth, filterYear, filterPeriod, filterStatus, filterDriver]);
@@ -68,7 +87,13 @@ export default function PayoutsClient({
   }
 
   async function markPaid(p: Payout, nextStatus: 'DRAFT' | 'PAID') {
-    const res = await fetch(`/api/payouts/${p.id}/pay`, {
+    let id = p.id;
+    // Virtual row: persist first, then mark paid.
+    if (!id) {
+      id = await materialize(p);
+      if (!id) return;
+    }
+    const res = await fetch(`/api/payouts/${id}/pay`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ status: nextStatus }),
@@ -78,16 +103,22 @@ export default function PayoutsClient({
   }
 
   async function markAllPaid() {
-    const drafts = payouts.filter((p) => p.status === 'DRAFT');
-    if (drafts.length === 0) { alert('No DRAFT payouts in current filter'); return; }
-    if (!confirm(`Mark ${drafts.length} unpaid payout${drafts.length !== 1 ? 's' : ''} as PAID? This also marks their daily sheets as paid.`)) return;
+    // "Unpaid" means DRAFT or VIRTUAL (virtual rows are implicitly unpaid).
+    const unpaid = payouts.filter((p) => p.status === 'DRAFT' || p.status === 'VIRTUAL');
+    if (unpaid.length === 0) { alert('No unpaid payouts in current filter'); return; }
+    if (!confirm(`Mark ${unpaid.length} unpaid payout${unpaid.length !== 1 ? 's' : ''} as PAID? This also marks their daily sheets as paid.`)) return;
 
     // Collect per-driver failures so one bad row doesn't silently skip the
     // rest of the batch — surface the list to the user.
     const failures: string[] = [];
-    for (const p of drafts) {
+    for (const p of unpaid) {
       try {
-        const res = await fetch(`/api/payouts/${p.id}/pay`, {
+        let id = p.id;
+        if (!id) {
+          id = await materialize(p);
+          if (!id) { failures.push(`${p.driver?.name ?? p.driverId}: failed to create payout`); continue; }
+        }
+        const res = await fetch(`/api/payouts/${id}/pay`, {
           method:  'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ status: 'PAID' }),
@@ -104,14 +135,25 @@ export default function PayoutsClient({
     await refresh();
 
     if (failures.length > 0) {
-      const paidCount = drafts.length - failures.length;
+      const paidCount = unpaid.length - failures.length;
       alert(
-        `Marked ${paidCount} of ${drafts.length} paid.\n\n` +
+        `Marked ${paidCount} of ${unpaid.length} paid.\n\n` +
         `Failed (${failures.length}):\n` +
         failures.slice(0, 10).join('\n') +
         (failures.length > 10 ? `\n…and ${failures.length - 10} more` : '')
       );
     }
+  }
+
+  /** Open a per-driver PDF. For virtual rows, materialize first. */
+  async function openPDF(p: Payout) {
+    let id = p.id;
+    if (!id) {
+      id = await materialize(p);
+      if (!id) return;
+      await refresh();
+    }
+    window.open(`/api/payouts/${id}/pdf`, '_blank');
   }
 
   function downloadAllPDF() {
@@ -168,11 +210,11 @@ export default function PayoutsClient({
         </div>
       </div>
 
-      {/* Bulk action bar */}
-      {payouts.some((p) => p.status === 'DRAFT') && (
+      {/* Bulk action bar — counts DRAFT + VIRTUAL as unpaid */}
+      {payouts.some((p) => p.status === 'DRAFT' || p.status === 'VIRTUAL') && (
         <div className="flex items-center justify-between rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
           <span className="text-sm font-medium text-amber-700">
-            {payouts.filter((p) => p.status === 'DRAFT').length} unpaid payout{payouts.filter((p) => p.status === 'DRAFT').length !== 1 ? 's' : ''} in current filter
+            {payouts.filter((p) => p.status === 'DRAFT' || p.status === 'VIRTUAL').length} unpaid payout{payouts.filter((p) => p.status === 'DRAFT' || p.status === 'VIRTUAL').length !== 1 ? 's' : ''} in current filter
           </span>
           <Button size="sm" variant="primary" onClick={markAllPaid}>Mark All Paid</Button>
         </div>
@@ -182,8 +224,8 @@ export default function PayoutsClient({
         <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 py-12 text-center text-sm text-gray-400">Loading…</div>
       ) : payouts.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-20 text-center">
-          <p className="text-base font-semibold text-gray-900">No payouts yet</p>
-          <p className="mt-1 text-sm text-gray-500">Select a period above and click &quot;Generate All&quot; to create payout records for all active drivers.</p>
+          <p className="text-base font-semibold text-gray-900">No drivers with activity in this period</p>
+          <p className="mt-1 text-sm text-gray-500">Change the month / period filter above, or add daily sheets for drivers in this period.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
@@ -197,41 +239,54 @@ export default function PayoutsClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {payouts.map((p) => (
-                  <tr key={p.id} className="group hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <Link href={`/drivers/${p.driverId}`} className="font-medium text-indigo-600 hover:text-indigo-800">
-                        {p.driver.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">P{p.payoutPeriod} · {MONTHS[p.month - 1].slice(0, 3)} {p.year}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatPeriodLabel(p.payoutPeriod as 1|2|3, p.month, p.year)}</td>
-                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(p.totalGross)}</td>
-                    <td className={`px-4 py-3 font-semibold whitespace-nowrap ${p.totalNetPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {formatCurrency(p.totalNetPay)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={p.status === 'PAID' ? 'paid' : 'draft'} />
-                      {p.paidDate && <p className="mt-0.5 text-xs text-gray-400">{format(new Date(p.paidDate), 'MMM d')}</p>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button size="sm" variant="ghost" onClick={() => window.open(`/api/payouts/${p.id}/pdf`, '_blank')}>
-                          PDF
-                        </Button>
-                        {p.status === 'DRAFT' ? (
-                          <Button size="sm" variant="ghost" onClick={() => markPaid(p, 'PAID')} className="text-emerald-600 hover:bg-emerald-50">
-                            Mark Paid
-                          </Button>
+                {payouts.map((p) => {
+                  const key = p.id ?? `virt-${p.driverId}-${p.payoutPeriod}-${p.month}-${p.year}`;
+                  const isVirtual = p.status === 'VIRTUAL';
+                  return (
+                    <tr key={key} className="group hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <Link href={`/drivers/${p.driverId}`} className="font-medium text-indigo-600 hover:text-indigo-800">
+                          {p.driver.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">P{p.payoutPeriod} · {MONTHS[p.month - 1].slice(0, 3)} {p.year}</td>
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatPeriodLabel(p.payoutPeriod as 1|2|3, p.month, p.year)}</td>
+                      <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(p.totalGross)}</td>
+                      <td className={`px-4 py-3 font-semibold whitespace-nowrap ${p.totalNetPay >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {formatCurrency(p.totalNetPay)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isVirtual ? (
+                          <span
+                            title="Live totals from daily sheets — no payout record saved yet. Clicking Mark Paid or PDF will save it first."
+                            className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200"
+                          >
+                            Not generated
+                          </span>
                         ) : (
-                          <Button size="sm" variant="ghost" onClick={() => markPaid(p, 'DRAFT')} className="text-amber-600 hover:bg-amber-50">
-                            Reopen
-                          </Button>
+                          <>
+                            <Badge variant={p.status === 'PAID' ? 'paid' : 'draft'} />
+                            {p.paidDate && <p className="mt-0.5 text-xs text-gray-400">{format(new Date(p.paidDate), 'MMM d')}</p>}
+                          </>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button size="sm" variant="ghost" onClick={() => openPDF(p)}>PDF</Button>
+                          {p.status === 'PAID' ? (
+                            <Button size="sm" variant="ghost" onClick={() => markPaid(p, 'DRAFT')} className="text-amber-600 hover:bg-amber-50">
+                              Reopen
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" onClick={() => markPaid(p, 'PAID')} className="text-emerald-600 hover:bg-emerald-50">
+                              Mark Paid
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50">

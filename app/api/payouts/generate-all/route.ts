@@ -44,14 +44,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Group sums per driver. Under the 40/60 model, "deductions from driver's gross" =
-    // totalGross − totalNetPay (debit fees + company share). Gas/call/extra are company expenses.
+    // Driver pay per period = sum of per-shift companyNet (gross × 60% − debit − gas − call − extra).
+    // netDriverPay (gross × 40%) is kept on DailySheet for reference only.
     const sumsByDriver = new Map<string, { gross: number; net: number }>();
     for (const d of drivers) sumsByDriver.set(d.id, { gross: 0, net: 0 });
     for (const s of sheets) {
       const cur = sumsByDriver.get(s.driverId)!;
       cur.gross += s.grossEarnings;
-      cur.net   += s.netDriverPay;
+      cur.net   += s.companyNet ?? 0;
     }
 
     // Upsert each driver's payout in parallel inside a transaction
