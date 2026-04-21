@@ -63,8 +63,8 @@ export default async function DashboardPage() {
     }).catch(() => [] as { month: number; year: number; amount: number; vehicleNumber: string }[]),
     prisma.brokerTransaction.findMany({
       where: { month: curMonth, year: curYear, status: { not: 'VOID' } },
-      select: { amount: true, type: true },
-    }).catch(() => [] as { amount: number; type: string }[]),
+      select: { amount: true, type: true, status: true },
+    }).catch(() => [] as { amount: number; type: string; status: string }[]),
     prisma.companyExpense.findMany({
       where: { month: curMonth, year: curYear },
       select: { amount: true, vehicleNumber: true },
@@ -118,7 +118,12 @@ export default async function DashboardPage() {
   // --- Company P&L block (current month) ---
   const vehicleProfit = perVehicle.reduce((a, v) => a + v.profit, 0);
 
-  const brokerInflow  = brokerTxsMonth.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+  // Inflow = everything billed TO brokers (non-PAYOUT). Split by status so
+  // the card can show "Paid" vs "Pending" alongside the big total.
+  const inflowTxs     = brokerTxsMonth.filter((t) => t.type !== 'PAYOUT');
+  const brokerPaid    = inflowTxs.filter((t) => t.status === 'PAID').reduce((a, t) => a + t.amount, 0);
+  const brokerPending = inflowTxs.filter((t) => t.status !== 'PAID').reduce((a, t) => a + t.amount, 0);
+  const brokerInflow  = brokerPaid + brokerPending;
   const brokerOutflow = brokerTxsMonth.filter((t) => t.type === 'PAYOUT').reduce((a, t) => a + t.amount, 0);
   const brokerProfit  = brokerInflow - brokerOutflow;
 
@@ -186,15 +191,11 @@ export default async function DashboardPage() {
             sub={`${perVehicle.length} company cab${perVehicle.length !== 1 ? 's' : ''}`}
             tone={vehicleProfit >= 0 ? 'positive' : 'negative'}
           />
-          <BigStat
-            label="Broker Profit"
-            value={brokerProfit}
-            sub={
-              brokerOutflow > 0
-                ? `in ${formatCurrency(brokerInflow)} − out ${formatCurrency(brokerOutflow)}`
-                : `billed (paid + pending)`
-            }
-            tone={brokerProfit >= 0 ? 'positive' : 'negative'}
+          <BrokerProfitCard
+            total={brokerProfit}
+            paid={brokerPaid}
+            pending={brokerPending}
+            outflow={brokerOutflow}
           />
           <BigStat
             label="Other Expense"
@@ -398,6 +399,36 @@ export default async function DashboardPage() {
         )}
       </section>
 
+    </div>
+  );
+}
+
+/** Broker Profit card — big total up top, Paid / Pending split underneath so
+ *  Yash can see both at a glance without navigating away. */
+function BrokerProfitCard({ total, paid, pending, outflow }: {
+  total:   number;
+  paid:    number;
+  pending: number;
+  outflow: number;
+}) {
+  const tone = total >= 0 ? 'text-emerald-600' : 'text-red-600';
+  return (
+    <div className="rounded-2xl p-5 shadow-sm ring-1 ring-gray-200 bg-white">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Broker Profit</p>
+      <p className={`mt-2 text-3xl font-bold ${tone}`}>{formatCurrency(total)}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500">Paid</p>
+          <p className="mt-0.5 text-sm font-semibold text-emerald-600">{formatCurrency(paid)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">Pending</p>
+          <p className="mt-0.5 text-sm font-semibold text-amber-600">{formatCurrency(pending)}</p>
+        </div>
+      </div>
+      {outflow > 0 && (
+        <p className="mt-2 text-xs text-gray-400">− {formatCurrency(outflow)} paid out to brokers</p>
+      )}
     </div>
   );
 }
