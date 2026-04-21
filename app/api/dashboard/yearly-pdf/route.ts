@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const yearStart = new Date(year, 0, 1);
     const yearEnd   = new Date(year + 1, 0, 1);
-    const [sheets, expenses, brokerExps] = await Promise.all([
+    const [sheets, expenses, brokerExps, brokerTxs] = await Promise.all([
       cabs.length > 0
         ? prisma.dailySheet.findMany({
             where:  { vehicleNumber: { in: cabs }, year },
@@ -40,12 +40,17 @@ export async function GET(request: NextRequest) {
             select: { cabNumber: true, amount: true, date: true },
           })
         : Promise.resolve([] as { cabNumber: string; amount: number; date: Date }[]),
+      prisma.brokerTransaction.findMany({
+        where:  { year, status: { not: 'VOID' } },
+        select: { month: true, amount: true, type: true },
+      }),
     ]);
 
     const rows: YearlyRow[] = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
       const ss = sheets.filter((s) => s.month === m);
       const xs = expenses.filter((x) => x.month === m);
       const bx = brokerExps.filter((e) => new Date(e.date).getMonth() + 1 === m);
+      const bt = brokerTxs.filter((t) => t.month === m);
       const gross         = ss.reduce((a, s) => a + s.grossEarnings,         0);
       const driverPay     = ss.reduce((a, s) => a + s.netDriverPay,          0);
       const gas           = ss.reduce((a, s) => a + s.gasDeduction,          0);
@@ -54,12 +59,16 @@ export async function GET(request: NextRequest) {
                           + bx.reduce((a, e) => a + e.amount, 0);
       const otherExp      = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
       const vehicleP      = gross - driverPay - gas - extra - perVehicleExp;
+      const brokerIn      = bt.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+      const brokerOut     = bt.filter((t) => t.type === 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+      const brokerP       = brokerIn - brokerOut;
       return {
         month:           m,
         revenue:         gross,
         carExpenses:     gas + extra + perVehicleExp,
         companyExpenses: otherExp,
-        profit:          vehicleP - otherExp,
+        brokerProfit:    brokerP,
+        profit:          vehicleP + brokerP - otherExp,
       };
     });
 

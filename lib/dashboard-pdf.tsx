@@ -164,6 +164,7 @@ export interface YearlyRow {
   revenue:         number;
   carExpenses:     number;
   companyExpenses: number;
+  brokerProfit:    number;
   profit:          number;
 }
 
@@ -183,14 +184,15 @@ export async function renderYearlyPDF(params: {
       revenue:         a.revenue         + r.revenue,
       carExpenses:     a.carExpenses     + r.carExpenses,
       companyExpenses: a.companyExpenses + r.companyExpenses,
+      brokerProfit:    a.brokerProfit    + r.brokerProfit,
       profit:          a.profit          + r.profit,
     }),
-    { revenue: 0, carExpenses: 0, companyExpenses: 0, profit: 0 },
+    { revenue: 0, carExpenses: 0, companyExpenses: 0, brokerProfit: 0, profit: 0 },
   );
 
   const doc = (
     <Document>
-      <Page size="A4" style={s.page}>
+      <Page size="A4" orientation="landscape" style={s.page}>
         <Header subtitle={`${params.year} — Year to Date`} />
 
         <View style={s.tableHeader}>
@@ -198,6 +200,7 @@ export async function renderYearlyPDF(params: {
           <Text style={[s.colHdr, yr.cCol]}>Revenue</Text>
           <Text style={[s.colHdr, yr.cCol]}>Car Expenses</Text>
           <Text style={[s.colHdr, yr.cCol]}>Other Expense</Text>
+          <Text style={[s.colHdr, yr.cCol]}>Broker Profit</Text>
           <Text style={[s.colHdr, yr.cProfit]}>Total Profit</Text>
         </View>
 
@@ -210,6 +213,7 @@ export async function renderYearlyPDF(params: {
               <Text style={[yr.cCol, { color }]}>{formatCurrency(r.revenue)}</Text>
               <Text style={[yr.cCol, { color: isFuture ? '#9CA3AF' : '#6B7280' }]}>-{formatCurrency(r.carExpenses)}</Text>
               <Text style={[yr.cCol, { color: isFuture ? '#9CA3AF' : '#6B7280' }]}>-{formatCurrency(r.companyExpenses)}</Text>
+              <Text style={[yr.cCol, { color: isFuture ? '#9CA3AF' : r.brokerProfit >= 0 ? '#059669' : '#DC2626' }]}>{r.brokerProfit !== 0 ? `+${formatCurrency(r.brokerProfit)}` : formatCurrency(0)}</Text>
               <Text style={[yr.cProfit, { color: isFuture ? '#9CA3AF' : r.profit >= 0 ? '#059669' : '#DC2626' }]}>{formatCurrency(r.profit)}</Text>
             </View>
           );
@@ -220,6 +224,7 @@ export async function renderYearlyPDF(params: {
           <Text style={[yr.cCol, s.bold]}>{formatCurrency(totals.revenue)}</Text>
           <Text style={[yr.cCol, s.bold, { color: '#6B7280' }]}>-{formatCurrency(totals.carExpenses)}</Text>
           <Text style={[yr.cCol, s.bold, { color: '#6B7280' }]}>-{formatCurrency(totals.companyExpenses)}</Text>
+          <Text style={[yr.cCol, s.bold, { color: totals.brokerProfit >= 0 ? '#059669' : '#DC2626' }]}>+{formatCurrency(totals.brokerProfit)}</Text>
           <Text style={[yr.cProfit, { color: totals.profit >= 0 ? '#059669' : '#DC2626' }]}>{formatCurrency(totals.profit)}</Text>
         </View>
 

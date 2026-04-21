@@ -5,9 +5,10 @@ export interface MonthPoint {
   month: number;      // 1-12
   year:  number;
   revenue: number;    // gross earnings — company cars only
-  carExpenses: number;      // gas + call + extra (from daily sheets)
-  companyExpenses: number;  // CompanyExpense totals
-  companyNet: number;       // gross × 60% − debit − gas − call − extra
+  carExpenses: number;      // gas + extra + per-vehicle-tagged expenses
+  companyExpenses: number;  // untagged CompanyExpense totals
+  brokerProfit: number;     // billed to brokers minus PAYOUT outflows
+  companyNet: number;       // vehicle profit + broker profit − other expense
 }
 
 export interface ExpenseSlice {

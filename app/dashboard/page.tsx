@@ -34,12 +34,10 @@ export default async function DashboardPage() {
   const curYear  = now.getFullYear();
 
   // --- Phase 1: things we need to know before querying by vehicleNumber ---
-  const [companyCars, investorCarCount, allInvoices, companiesCount, ridesCount] = await Promise.all([
+  const [companyCars, investorCarCount, allInvoices] = await Promise.all([
     prisma.brokerVehicle.findMany({ where: { isCompanyCar: true }, select: { cabNumber: true } }).catch(() => [] as { cabNumber: string }[]),
     prisma.brokerVehicle.count({ where: { isCompanyCar: false, isActive: true } }).catch(() => 0),
     prisma.invoice.findMany({ orderBy: { createdAt: 'desc' } }).catch(() => [] as any[]),
-    prisma.company.count().catch(() => 0),
-    prisma.ride.count().catch(() => 0),
   ]);
   const companyCabNumbers = companyCars.map((v) => v.cabNumber);
 
@@ -47,7 +45,7 @@ export default async function DashboardPage() {
   // For the yearly trend, pull every month of the current year (Jan → Dec).
   const ytdMonths: { month: number; year: number }[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, year: curYear }));
 
-  const [ytdSheets, ytdCompanyExpenses, brokerTxsMonth, companyExpensesMonth, curSheets, curRepairs] = await Promise.all([
+  const [ytdSheets, ytdCompanyExpenses, brokerTxsYear, companyExpensesMonth, curSheets, curRepairs] = await Promise.all([
     companyCabNumbers.length > 0
       ? prisma.dailySheet.findMany({
           where: { vehicleNumber: { in: companyCabNumbers }, year: curYear },
@@ -63,9 +61,9 @@ export default async function DashboardPage() {
       select: { month: true, year: true, amount: true, vehicleNumber: true },
     }).catch(() => [] as { month: number; year: number; amount: number; vehicleNumber: string }[]),
     prisma.brokerTransaction.findMany({
-      where: { month: curMonth, year: curYear, status: { not: 'VOID' } },
-      select: { amount: true, type: true, status: true },
-    }).catch(() => [] as { amount: number; type: string; status: string }[]),
+      where: { year: curYear, status: { not: 'VOID' } },
+      select: { amount: true, type: true, status: true, month: true },
+    }).catch(() => [] as { amount: number; type: string; status: string; month: number }[]),
     prisma.companyExpense.findMany({
       where: { month: curMonth, year: curYear },
       select: { amount: true, vehicleNumber: true },
@@ -138,6 +136,8 @@ export default async function DashboardPage() {
   // --- Company P&L block (current month) ---
   const vehicleProfit = perVehicle.reduce((a, v) => a + v.profit, 0);
 
+  // Current-month broker transactions (drives the Broker Profit card).
+  const brokerTxsMonth = brokerTxsYear.filter((t) => t.month === curMonth);
   // Inflow = everything billed TO brokers (non-PAYOUT). Split by status so
   // the card can show "Paid" vs "Pending" alongside the big total.
   const inflowTxs     = brokerTxsMonth.filter((t) => t.type !== 'PAYOUT');
@@ -160,6 +160,7 @@ export default async function DashboardPage() {
     const ss = ytdSheets.filter((s) => s.month === m.month && s.year === m.year);
     const xs = ytdCompanyExpenses.filter((x) => x.month === m.month && x.year === m.year);
     const bx = brokerExpensesYear.filter((e) => new Date(e.date).getMonth() + 1 === m.month);
+    const bt = brokerTxsYear.filter((t) => t.month === m.month);
     const gross     = ss.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = ss.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = ss.reduce((a, s) => a + s.gasDeduction,          0);
@@ -170,12 +171,16 @@ export default async function DashboardPage() {
                         + bx.reduce((a, e) => a + e.amount, 0);
     const otherExp      = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
     const vehicleP      = gross - driverPay - gas - extra - perVehicleExp;
+    const brokerIn      = bt.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+    const brokerOut     = bt.filter((t) => t.type === 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+    const brokerP       = brokerIn - brokerOut;
     return {
       month: m.month, year: m.year,
       revenue:         gross,
       carExpenses:     gas + extra + perVehicleExp,
       companyExpenses: otherExp,
-      companyNet:      vehicleP - otherExp,
+      brokerProfit:    brokerP,
+      companyNet:      vehicleP + brokerP - otherExp,
     };
   });
 
@@ -341,7 +346,7 @@ export default async function DashboardPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    {['Month', 'Revenue', 'Car Expenses', 'Other Expense', 'Total Profit'].map((h) => (
+                    {['Month', 'Revenue', 'Car Expenses', 'Other Expense', 'Broker Profit', 'Total Profit'].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -350,7 +355,6 @@ export default async function DashboardPage() {
                   {ytd.map((p) => {
                     const isCurrent = p.month === curMonth;
                     const isFuture  = p.year > curYear || (p.year === curYear && p.month > curMonth);
-                    const totalExp  = p.carExpenses + p.companyExpenses;
                     const profit    = p.companyNet;
                     return (
                       <tr key={`${p.year}-${p.month}`} className={`${isFuture ? 'opacity-40' : ''} ${isCurrent ? 'bg-indigo-50/50' : 'hover:bg-gray-50'}`}>
@@ -361,6 +365,7 @@ export default async function DashboardPage() {
                         <td className="px-4 py-2.5 text-gray-900 whitespace-nowrap">{formatCurrency(p.revenue)}</td>
                         <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">−{formatCurrency(p.carExpenses)}</td>
                         <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">−{formatCurrency(p.companyExpenses)}</td>
+                        <td className={`px-4 py-2.5 whitespace-nowrap ${p.brokerProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{p.brokerProfit !== 0 ? `+${formatCurrency(p.brokerProfit)}` : formatCurrency(0)}</td>
                         <td className={`px-4 py-2.5 font-semibold whitespace-nowrap ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(profit)}</td>
                       </tr>
                     );
@@ -372,6 +377,9 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">{formatCurrency(ytd.reduce((a, p) => a + p.revenue, 0))}</td>
                     <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(ytd.reduce((a, p) => a + p.carExpenses, 0))}</td>
                     <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(ytd.reduce((a, p) => a + p.companyExpenses, 0))}</td>
+                    <td className={`px-4 py-3 font-bold whitespace-nowrap ${ytd.reduce((a, p) => a + p.brokerProfit, 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      +{formatCurrency(ytd.reduce((a, p) => a + p.brokerProfit, 0))}
+                    </td>
                     <td className={`px-4 py-3 font-bold whitespace-nowrap ${ytd.reduce((a, p) => a + p.companyNet, 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {formatCurrency(ytd.reduce((a, p) => a + p.companyNet, 0))}
                     </td>
@@ -384,61 +392,14 @@ export default async function DashboardPage() {
       </section>
 
       {/* =================================================================
-          4. Low-priority — invoice summary + Companies / Rides
-          Yash: "this data we can see inside so that not priority".
+          4. Low-priority — consolidated invoice summary
+          Yash: "this data we can see inside so that not priority"
+          + "i need this same as broker profit like total is big and rest
+             of all down" → single card, big total + breakdown underneath.
           ================================================================= */}
       <section className="pt-4 border-t border-gray-100">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Invoices &amp; directory</h2>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5 mb-4">
-          {[
-            { label: 'Total Invoiced', value: stats.total,   sub: `${stats.invoiceCount} invoice${stats.invoiceCount !== 1 ? 's' : ''}`, valueColor: 'text-gray-900' },
-            { label: 'Received',       value: stats.paid,    sub: null,                                                                    valueColor: 'text-emerald-600' },
-            { label: 'Pending',        value: stats.pending, sub: null,                                                                    valueColor: 'text-amber-600' },
-            { label: 'Drafts',         value: stats.draft,   sub: null,                                                                    valueColor: 'text-slate-500' },
-          ].map((card) => (
-            <div key={card.label} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{card.label}</p>
-              <p className={`mt-2 text-2xl font-bold ${card.valueColor}`}>{formatCurrency(card.value)}</p>
-              {card.sub && <p className="mt-1 text-xs text-gray-500">{card.sub}</p>}
-            </div>
-          ))}
-          <div className={`rounded-2xl p-5 shadow-sm ring-1 ${stats.overdueCount > 0 ? 'bg-red-50 ring-red-200' : 'bg-white ring-gray-200'}`}>
-            <p className={`text-xs font-semibold uppercase tracking-widest ${stats.overdueCount > 0 ? 'text-red-400' : 'text-gray-400'}`}>Overdue</p>
-            <p className={`mt-2 text-2xl font-bold ${stats.overdueCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-              {stats.overdueCount > 0 ? formatCurrency(stats.overdue) : '—'}
-            </p>
-            {stats.overdueCount > 0 && (
-              <p className="mt-1 text-xs text-red-500">{stats.overdueCount} invoice{stats.overdueCount !== 1 ? 's' : ''} past due</p>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50">
-              <svg className="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{companiesCount}</p>
-              <p className="text-sm text-gray-500">Companies</p>
-            </div>
-            <Link href="/companies" className="ml-auto text-sm font-medium text-indigo-600 hover:text-indigo-700">View →</Link>
-          </div>
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50">
-              <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{ridesCount}</p>
-              <p className="text-sm text-gray-500">Total Rides</p>
-            </div>
-            <Link href="/rides" className="ml-auto text-sm font-medium text-indigo-600 hover:text-indigo-700">View →</Link>
-          </div>
-        </div>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Invoices</h2>
+        <InvoiceSummaryCard stats={stats} />
 
         {investorCarCount > 0 && (
           <p className="mt-4 text-xs text-gray-400">
@@ -447,6 +408,44 @@ export default async function DashboardPage() {
         )}
       </section>
 
+    </div>
+  );
+}
+
+/** Consolidated Invoice summary. Big Total Invoiced on top, breakdown
+ *  (Received / Pending / Drafts / Overdue) in a 4-column footer. Matches
+ *  the Broker Profit card style per Yash's ask. */
+function InvoiceSummaryCard({ stats }: {
+  stats: { total: number; paid: number; pending: number; draft: number; overdue: number; invoiceCount: number; overdueCount: number };
+}) {
+  return (
+    <div className="rounded-2xl p-5 shadow-sm ring-1 ring-gray-200 bg-white">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Total Invoiced</p>
+      <p className="mt-2 text-3xl font-bold text-gray-900">{formatCurrency(stats.total)}</p>
+      <p className="mt-1 text-xs text-gray-500">{stats.invoiceCount} invoice{stats.invoiceCount !== 1 ? 's' : ''}</p>
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 border-t border-gray-100 pt-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500">Received</p>
+          <p className="mt-0.5 text-sm font-semibold text-emerald-600">{formatCurrency(stats.paid)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">Pending</p>
+          <p className="mt-0.5 text-sm font-semibold text-amber-600">{formatCurrency(stats.pending)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Drafts</p>
+          <p className="mt-0.5 text-sm font-semibold text-slate-500">{formatCurrency(stats.draft)}</p>
+        </div>
+        <div>
+          <p className={`text-[10px] font-semibold uppercase tracking-wide ${stats.overdueCount > 0 ? 'text-red-500' : 'text-slate-400'}`}>Overdue</p>
+          <p className={`mt-0.5 text-sm font-semibold ${stats.overdueCount > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+            {stats.overdueCount > 0 ? formatCurrency(stats.overdue) : '—'}
+          </p>
+          {stats.overdueCount > 0 && (
+            <p className="text-[10px] text-red-500 mt-0.5">{stats.overdueCount} past due</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
