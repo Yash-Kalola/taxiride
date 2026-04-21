@@ -16,9 +16,9 @@ export const dynamic = 'force-dynamic';
  *   4. Low-priority: invoice summary, Companies/Rides links
  *
  * Formulas per Yash's April 2026 spec:
- *   - Vehicle Profit = Σ(gross − driver 40% − gas − call − extra − repairs)
- *     (debit fee is not subtracted here — it's a processor fee the company
- *     absorbs; will add back if Yash changes his mind)
+ *   - Vehicle Profit = Σ(gross − driver 40% − gas − extra − repairs)
+ *     (debit fee and call-charge are intentionally NOT subtracted here,
+ *     per Yash's explicit formula: "Gross – 40% driver – gas – extra – repairs")
  *   - Broker Profit  = Σ(broker transactions PAID+PENDING, excluding PAYOUT)
  *     − Σ(PAYOUT transactions). Stand rent is NOW correctly excluding
  *     company-subleased vehicles going forward (generate-week.ts fix).
@@ -53,7 +53,7 @@ export default async function DashboardPage() {
           select: {
             month: true, year: true, vehicleNumber: true,
             grossEarnings: true, netDriverPay: true, companyNet: true,
-            gasDeduction: true, callChargeDeduction: true, extraExpenseDeduction: true,
+            gasDeduction: true, extraExpenseDeduction: true,
           },
         })
       : Promise.resolve([] as any[]),
@@ -74,7 +74,7 @@ export default async function DashboardPage() {
           where: { vehicleNumber: { in: companyCabNumbers }, month: curMonth, year: curYear },
           select: {
             vehicleNumber: true, grossEarnings: true, netDriverPay: true,
-            gasDeduction: true, callChargeDeduction: true, extraExpenseDeduction: true,
+            gasDeduction: true, extraExpenseDeduction: true,
           },
         })
       : Promise.resolve([] as any[]),
@@ -95,10 +95,9 @@ export default async function DashboardPage() {
     gross:      number;
     driverPay:  number; // 40%
     gas:        number;
-    call:       number;
     extra:      number;
-    repairs:    number; // placeholder — not tracked yet
-    profit:     number; // gross − driverPay − gas − call − extra − repairs
+    repairs:    number;
+    profit:     number; // gross − driverPay − gas − extra − repairs
   }
   const perVehicle: VehicleStats[] = companyCabNumbers.map((cab) => {
     const sheets  = curSheets.filter((s) => s.vehicleNumber === cab);
@@ -108,12 +107,11 @@ export default async function DashboardPage() {
     const gross     = sheets.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = sheets.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = sheets.reduce((a, s) => a + s.gasDeduction,          0);
-    const call      = sheets.reduce((a, s) => a + s.callChargeDeduction,   0);
     const extra     = sheets.reduce((a, s) => a + s.extraExpenseDeduction, 0);
     return {
       cabNumber: cab,
-      gross, driverPay, gas, call, extra, repairs,
-      profit: gross - driverPay - gas - call - extra - repairs,
+      gross, driverPay, gas, extra, repairs,
+      profit: gross - driverPay - gas - extra - repairs,
     };
   }).sort((a, b) => b.profit - a.profit);
 
@@ -139,19 +137,17 @@ export default async function DashboardPage() {
     const gross     = ss.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = ss.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = ss.reduce((a, s) => a + s.gasDeduction,          0);
-    const call      = ss.reduce((a, s) => a + s.callChargeDeduction,   0);
     const extra     = ss.reduce((a, s) => a + s.extraExpenseDeduction, 0);
     // Per-vehicle repairs already baked into Vehicle Profit via curRepairs;
-    // carExpenses here covers the yearly chart only and includes repairs so
-    // the trend line reflects every cost. Other Expense excludes them to
-    // avoid double-counting in the profit subtotal.
+    // carExpenses here covers the yearly chart only. Call charges are
+    // excluded from the profit formula per Yash's spec.
     const repairs   = xs.filter((x) => x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
     const otherExp  = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
-    const vehicleP  = gross - driverPay - gas - call - extra - repairs;
+    const vehicleP  = gross - driverPay - gas - extra - repairs;
     return {
       month: m.month, year: m.year,
       revenue:         gross,
-      carExpenses:     gas + call + extra + repairs,
+      carExpenses:     gas + extra + repairs,
       companyExpenses: otherExp,
       companyNet:      vehicleP - otherExp,
     };
@@ -232,7 +228,7 @@ export default async function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Cab #', 'Gross', 'Driver 40%', 'Gas', 'Call', 'Extra', 'Repairs', 'Profit'].map((h) => (
+                  {['Cab #', 'Gross', 'Driver 40%', 'Gas', 'Extra', 'Repairs', 'Profit'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -244,7 +240,6 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(v.gross)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.driverPay)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.gas)}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.call)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.extra)}</td>
                     <td className={`px-4 py-3 whitespace-nowrap ${v.repairs > 0 ? 'text-gray-500' : 'text-gray-300'}`} title='Sum of Company Expenses tagged with this cab (category "Cab Repair")'>
                       {v.repairs > 0 ? `−${formatCurrency(v.repairs)}` : '—'}
@@ -259,7 +254,6 @@ export default async function DashboardPage() {
                   <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">{formatCurrency(perVehicle.reduce((a, v) => a + v.gross,     0))}</td>
                   <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.driverPay, 0))}</td>
                   <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.gas,       0))}</td>
-                  <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.call,      0))}</td>
                   <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.extra,     0))}</td>
                   <td className={`px-4 py-3 font-semibold whitespace-nowrap ${perVehicle.reduce((a, v) => a + v.repairs, 0) > 0 ? 'text-gray-500' : 'text-gray-300'}`}>
                     {perVehicle.reduce((a, v) => a + v.repairs, 0) > 0
