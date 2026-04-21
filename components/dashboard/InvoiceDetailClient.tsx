@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
+import SendInvoiceModal from '@/components/email/SendInvoiceModal';
 import { formatCurrency } from '@/lib/tax';
 
 interface Company { companyName: string; address: string; poNumber: string; email: string; }
@@ -37,14 +38,14 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
   const [dueDate,   setDueDate]   = useState(initial.dueDate ?? '');
   const [saving,    setSaving]    = useState(false);
   const [savingDates, setSavingDates] = useState(false);
-  const [sending,   setSending]   = useState(false);
-  const [resending, setResending] = useState(false);
   const [deleting,  setDeleting]  = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [msg,       setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
   const [showPayModal, setShowPayModal] = useState(false);
   const [payMethod, setPayMethod]       = useState('');
   const [payRef, setPayRef]             = useState('');
+  const [showSendModal,   setShowSendModal]   = useState(false);
+  const [showResendModal, setShowResendModal] = useState(false);
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -73,30 +74,23 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     setSavingDates(false);
   }
 
-  async function send() {
-    if (!confirm(`Send Invoice #${invoice.invoiceNumber} to ${invoice.company.email || '(no email set)'}?`)) return;
-    setSending(true); setMsg(null);
-    const res = await fetch(`/api/invoices/${invoice.id}/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...(dateSent ? { dateSent } : {}),
-        ...(dueDate  ? { dueDate }  : {}),
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
+  function handleSent(data: { emailError?: string | null; invoice?: any }) {
+    if (data?.invoice) {
       setInvoice((prev) => ({ ...prev, status: 'PENDING', dateSent: data.invoice.dateSent, dueDate: data.invoice.dueDate }));
       setDateSent(data.invoice.dateSent ?? '');
-      setDueDate(data.invoice.dueDate ?? '');
-      setMsg(data.emailError
-        ? { type: 'warn', text: 'Invoice marked as sent. Email could not be delivered — check SMTP settings in Vercel.' }
-        : { type: 'ok',  text: 'Invoice sent and emailed successfully.' }
-      );
-    } else {
-      setMsg({ type: 'err', text: data.error ?? 'Send failed.' });
+      setDueDate(data.invoice.dueDate  ?? '');
     }
-    setSending(false);
+    setMsg(data?.emailError
+      ? { type: 'warn', text: `Invoice marked as sent. Email could not be delivered: ${data.emailError}` }
+      : { type: 'ok',   text: 'Invoice sent and emailed successfully.' });
+    setShowSendModal(false);
+  }
+
+  function handleResent(data: { emailError?: string | null }) {
+    setMsg(data?.emailError
+      ? { type: 'warn', text: `Email could not be delivered: ${data.emailError}` }
+      : { type: 'ok',   text: 'Invoice re-sent successfully.' });
+    setShowResendModal(false);
   }
 
   async function deleteInvoice() {
@@ -111,21 +105,6 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     }
   }
 
-  async function resend() {
-    if (!confirm(`Resend Invoice #${invoice.invoiceNumber} to ${invoice.company.email || '(no email set)'}?`)) return;
-    setResending(true); setMsg(null);
-    const res  = await fetch(`/api/invoices/${invoice.id}/resend`, { method: 'POST' });
-    const data = await res.json();
-    if (res.ok) {
-      setMsg(data.emailError
-        ? { type: 'warn', text: 'Email could not be delivered — check SMTP settings in Vercel.' }
-        : { type: 'ok',   text: 'Invoice re-sent successfully.' }
-      );
-    } else {
-      setMsg({ type: 'err', text: data.error ?? 'Resend failed.' });
-    }
-    setResending(false);
-  }
 
   async function confirmPaid() {
     const data: Record<string, string> = { status: 'PAID' };
@@ -207,10 +186,9 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
                 <div className="flex flex-col items-end gap-1">
                   <Button
                     variant={invoice.company.email ? 'primary' : 'secondary'}
-                    onClick={send}
-                    disabled={sending}
+                    onClick={() => setShowSendModal(true)}
                   >
-                    {sending ? 'Sending…' : 'Send Invoice'}
+                    Send Invoice
                   </Button>
                   {!invoice.company.email && (
                     <p className="text-xs text-amber-600 max-w-[220px] text-right">
@@ -225,8 +203,8 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
             </>
           )}
           {invoice.status !== 'DRAFT' && invoice.company.email && (
-            <Button variant="secondary" onClick={resend} disabled={resending}>
-              {resending ? 'Sending…' : 'Resend Email'}
+            <Button variant="secondary" onClick={() => setShowResendModal(true)}>
+              Resend Email
             </Button>
           )}
         </div>
@@ -413,6 +391,36 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
           </div>
         </div>
       </Modal>
+
+      <SendInvoiceModal
+        open={showSendModal}
+        title={`Send Invoice #${invoice.invoiceNumber}`}
+        mode="send"
+        endpoint={`/api/invoices/${invoice.id}/send`}
+        invoiceNumber={invoice.invoiceNumber}
+        companyName={invoice.company.companyName}
+        recipientEmail={invoice.company.email}
+        total={invoice.total}
+        extraPayload={{
+          ...(dateSent ? { dateSent } : {}),
+          ...(dueDate  ? { dueDate }  : {}),
+        }}
+        onClose={() => setShowSendModal(false)}
+        onSent={handleSent}
+      />
+
+      <SendInvoiceModal
+        open={showResendModal}
+        title={`Resend Invoice #${invoice.invoiceNumber}`}
+        mode="resend"
+        endpoint={`/api/invoices/${invoice.id}/resend`}
+        invoiceNumber={invoice.invoiceNumber}
+        companyName={invoice.company.companyName}
+        recipientEmail={invoice.company.email}
+        total={invoice.total}
+        onClose={() => setShowResendModal(false)}
+        onSent={handleResent}
+      />
     </div>
   );
 }

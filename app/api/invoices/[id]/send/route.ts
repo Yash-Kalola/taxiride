@@ -8,10 +8,11 @@ import type { Company, Ride, Invoice } from '@prisma/client';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    // Accept optional custom dates from the request body
+    // Accept optional custom dates + From override from the request body.
     const body = await request.json().catch(() => ({}));
     const customDateSent = typeof body?.dateSent === 'string' && body.dateSent ? body.dateSent : null;
     const customDueDate  = typeof body?.dueDate  === 'string' && body.dueDate  ? body.dueDate  : null;
+    const fromOverride   = typeof body?.from     === 'string' && body.from     ? body.from     : undefined;
 
     const invoice = await prisma.invoice.findUnique({
       where: { id: params.id },
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     try {
       await sendInvoiceEmail({
         to:            invoice.company.email,
+        from:          fromOverride,
         invoiceNumber: invoice.invoiceNumber,
         month:         invoice.month,
         year:          invoice.year,

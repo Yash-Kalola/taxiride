@@ -4,8 +4,11 @@ import { renderInvoicePDF } from '@/lib/pdf';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Company, Ride, Invoice } from '@prisma/client';
 
-export async function POST(_: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const body = await request.json().catch(() => ({}));
+    const fromOverride = typeof body?.from === 'string' && body.from ? body.from : undefined;
+
     const invoice = await prisma.invoice.findUnique({
       where: { id: params.id },
       include: { company: true, rides: { where: { voided: false } } },
@@ -23,6 +26,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     try {
       await sendInvoiceEmail({
         to:            invoice.company.email,
+        from:          fromOverride,
         invoiceNumber: invoice.invoiceNumber,
         month:         invoice.month,
         year:          invoice.year,
