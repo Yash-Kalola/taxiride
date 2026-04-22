@@ -5,6 +5,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DashboardRefresh from '@/components/dashboard/DashboardRefresh';
 import { RevenueExpenseChart, ProfitExpenseLineChart, ExpenseBreakdownChart, type MonthPoint } from '@/components/dashboard/DashboardCharts';
 import DashboardPDFButton from '@/components/dashboard/DashboardPDFButton';
+import BrokersSection from '@/components/dashboard/BrokersSection';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +46,7 @@ export default async function DashboardPage() {
   // For the yearly trend, pull every month of the current year (Jan → Dec).
   const ytdMonths: { month: number; year: number }[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, year: curYear }));
 
-  const [ytdSheets, ytdCompanyExpenses, brokerTxsYear, companyExpensesMonth, curSheets, curRepairs] = await Promise.all([
+  const [ytdSheets, ytdCompanyExpenses, brokerTxsAll, companyExpensesMonth, curSheets, curRepairs] = await Promise.all([
     companyCabNumbers.length > 0
       ? prisma.dailySheet.findMany({
           where: { vehicleNumber: { in: companyCabNumbers }, year: curYear },
@@ -60,11 +61,14 @@ export default async function DashboardPage() {
       where: { year: curYear },
       select: { month: true, year: true, amount: true, vehicleNumber: true },
     }).catch(() => [] as { month: number; year: number; amount: number; vehicleNumber: string }[]),
+    // Fetch ALL broker transactions (any year) in one shot. The YTD view
+    // filters in-memory to the current year; the Brokers section defaults
+    // to all-time per Yash's ask.
     prisma.brokerTransaction.findMany({
-      where:   { year: curYear, status: { not: 'VOID' } },
-      select:  { amount: true, type: true, status: true, month: true, brokerId: true, broker: { select: { id: true, name: true } } },
+      where:   { status: { not: 'VOID' } },
+      select:  { amount: true, type: true, status: true, month: true, year: true, brokerId: true, broker: { select: { id: true, name: true } } },
       orderBy: [{ brokerId: 'asc' }, { createdAt: 'asc' }],
-    }).catch(() => [] as { amount: number; type: string; status: string; month: number; brokerId: string; broker: { id: string; name: string } }[]),
+    }).catch(() => [] as { amount: number; type: string; status: string; month: number; year: number; brokerId: string; broker: { id: string; name: string } }[]),
     prisma.companyExpense.findMany({
       where: { month: curMonth, year: curYear },
       select: { amount: true, vehicleNumber: true },
@@ -137,36 +141,43 @@ export default async function DashboardPage() {
   // --- Company P&L block (current month) ---
   const vehicleProfit = perVehicle.reduce((a, v) => a + v.profit, 0);
 
-  // Current-month broker transactions, grouped per broker for the per-broker
-  // card grid. Each card shows: Name (big), Total we own (big), Paid/Pending
-  // (small footer). Aggregate broker profit is the sum of every card's total.
+  // Current-year slice is used by YTD logic; current-month drives the top
+  // Broker Profit stat. Brokers section initial data is all-time.
+  const brokerTxsYear  = brokerTxsAll.filter((t) => t.year === curYear);
   const brokerTxsMonth = brokerTxsYear.filter((t) => t.month === curMonth);
 
-  interface BrokerStat {
-    id: string; name: string;
-    total: number;       // net owed this month (inflow − outflow)
-    paid: number;        // paid-status inflow
-    pending: number;     // non-paid inflow
-    outflow: number;     // PAYOUT amounts
-  }
-  const brokerStatsMap = new Map<string, BrokerStat>();
-  for (const t of brokerTxsMonth) {
-    const cur = brokerStatsMap.get(t.brokerId) ?? {
-      id: t.brokerId, name: t.broker.name,
-      total: 0, paid: 0, pending: 0, outflow: 0,
-    };
-    if (t.type === 'PAYOUT') {
-      cur.outflow += t.amount;
-      cur.total   -= t.amount;
-    } else {
-      if (t.status === 'PAID') cur.paid    += t.amount;
-      else                     cur.pending += t.amount;
-      cur.total += t.amount;
+  function aggregateBroker(txs: typeof brokerTxsAll) {
+    const map = new Map<string, { id: string; name: string; total: number; paid: number; pending: number; outflow: number }>();
+    for (const t of txs) {
+      const cur = map.get(t.brokerId) ?? { id: t.brokerId, name: t.broker.name, total: 0, paid: 0, pending: 0, outflow: 0 };
+      if (t.type === 'PAYOUT') {
+        cur.outflow += t.amount;
+        cur.total   -= t.amount;
+      } else {
+        if (t.status === 'PAID') cur.paid    += t.amount;
+        else                     cur.pending += t.amount;
+        cur.total += t.amount;
+      }
+      map.set(t.brokerId, cur);
     }
-    brokerStatsMap.set(t.brokerId, cur);
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }
-  const brokerStats: BrokerStat[] = Array.from(brokerStatsMap.values()).sort((a, b) => b.total - a.total);
-  const brokerProfit = brokerStats.reduce((a, b) => a + b.total, 0);
+
+  // Current-month stats drive the P&L "Broker Profit" stat at the top.
+  const brokerStatsMonth = aggregateBroker(brokerTxsMonth);
+  const brokerProfit     = brokerStatsMonth.reduce((a, b) => a + b.total, 0);
+
+  // All-time stats seed the Brokers section (default filter = All Time).
+  const brokerStatsAllTime = aggregateBroker(brokerTxsAll);
+  const brokerAggregateAllTime = {
+    total:       brokerStatsAllTime.reduce((a, b) => a + b.total,   0),
+    paid:        brokerStatsAllTime.reduce((a, b) => a + b.paid,    0),
+    pending:     brokerStatsAllTime.reduce((a, b) => a + b.pending, 0),
+    outflow:     brokerStatsAllTime.reduce((a, b) => a + b.outflow, 0),
+    brokerCount: brokerStatsAllTime.length,
+  };
+  const availableYears = Array.from(new Set(brokerTxsAll.map((t) => t.year))).sort((a, b) => b - a);
+  if (!availableYears.includes(curYear)) availableYears.unshift(curYear);
 
   // Per-vehicle repairs are already subtracted inside Vehicle Profit, so
   // exclude vehicleNumber-tagged expenses from "Other Expense" to avoid
@@ -241,7 +252,7 @@ export default async function DashboardPage() {
           <BigStat
             label="Broker Profit"
             value={brokerProfit}
-            sub={`${brokerStats.length} broker${brokerStats.length !== 1 ? 's' : ''} — see below`}
+            sub={`${brokerStatsMonth.length} broker${brokerStatsMonth.length !== 1 ? 's' : ''} — see below`}
             tone={brokerProfit >= 0 ? 'positive' : 'negative'}
           />
           <BigStat
@@ -260,25 +271,16 @@ export default async function DashboardPage() {
       </section>
 
       {/* =================================================================
-          1b. Brokers — per-broker cards (Name, Total owed, Paid + Pending)
+          1b. Brokers — filterable per-broker cards + aggregate summary
+          Default filter: All Time (Yash wanted all-time and/or monthly).
           ================================================================= */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Brokers — {MONTHS[curMonth - 1]} {curYear}</h2>
-          <Link href="/brokers" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">All brokers →</Link>
-        </div>
-        {brokerStats.length === 0 ? (
-          <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-10 text-center text-sm text-gray-400">
-            No broker billing for {MONTHS[curMonth - 1]} yet.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {brokerStats.map((b) => (
-              <BrokerCard key={b.id} stat={b} />
-            ))}
-          </div>
-        )}
-      </section>
+      <BrokersSection
+        initialAggregate={brokerAggregateAllTime}
+        initialBrokers={brokerStatsAllTime}
+        initialYear={''}
+        initialMonth={''}
+        availableYears={availableYears}
+      />
 
       {/* =================================================================
           2. Per-Vehicle breakdown (current month)
@@ -489,37 +491,6 @@ function InvoiceSummaryCard({ stats }: {
         </div>
       </div>
     </div>
-  );
-}
-
-/** Per-broker summary card. Broker name on top, total owed in big type, then
- *  Paid / Pending as a smaller footer pair. Grid of these replaces the single
- *  aggregate Broker Profit card per Yash's design ask. */
-function BrokerCard({ stat }: {
-  stat: { id: string; name: string; total: number; paid: number; pending: number; outflow: number };
-}) {
-  const tone = stat.total >= 0 ? 'text-emerald-600' : 'text-red-600';
-  return (
-    <Link
-      href={`/brokers/${stat.id}`}
-      className="group rounded-2xl p-5 shadow-sm ring-1 ring-gray-200 bg-white hover:ring-indigo-200 hover:shadow-md transition-shadow"
-    >
-      <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-indigo-700" title={stat.name}>{stat.name}</p>
-      <p className={`mt-2 text-2xl font-bold ${tone}`}>{formatCurrency(stat.total)}</p>
-      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500">Paid</p>
-          <p className="mt-0.5 text-sm font-semibold text-emerald-600">{formatCurrency(stat.paid)}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">Pending</p>
-          <p className="mt-0.5 text-sm font-semibold text-amber-600">{formatCurrency(stat.pending)}</p>
-        </div>
-      </div>
-      {stat.outflow > 0 && (
-        <p className="mt-2 text-xs text-gray-400">− {formatCurrency(stat.outflow)} paid out</p>
-      )}
-    </Link>
   );
 }
 
