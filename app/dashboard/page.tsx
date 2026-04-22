@@ -93,20 +93,25 @@ export default async function DashboardPage() {
       : Promise.resolve([] as { vehicleNumber: string; amount: number }[]),
   ]);
 
-  // Broker expenses tagged to a company cab also count as per-vehicle expenses.
-  // BrokerExpense is keyed by date (not month/year), so filter in memory after
-  // fetching the full-year slice for any company cab.
+  // BrokerExpenses are charges the company bills to brokers (Yash's mental
+  // model: "expense" = company income). Fetch ALL rows with broker info so
+  // they contribute to both the Broker Profit cards AND the per-vehicle Other
+  // column (when tagged to a company cab). No cab filter on the fetch — we
+  // filter to company cabs in memory for the per-vehicle subset.
+  const brokerExpensesAll = await prisma.brokerExpense.findMany({
+    select:  {
+      id: true, brokerId: true, cabNumber: true, amount: true, paid: true, date: true,
+      broker: { select: { id: true, name: true } },
+    },
+    orderBy: { date: 'desc' },
+  }).catch(() => [] as { id: string; brokerId: string; cabNumber: string; amount: number; paid: boolean; date: Date; broker: { id: string; name: string } }[]);
+
   const yearStart = new Date(curYear, 0, 1);
   const yearEnd   = new Date(curYear + 1, 0, 1);
-  const brokerExpensesYear = companyCabNumbers.length > 0
-    ? await prisma.brokerExpense.findMany({
-        where: {
-          cabNumber: { in: companyCabNumbers },
-          date:      { gte: yearStart, lt: yearEnd },
-        },
-        select: { cabNumber: true, amount: true, date: true },
-      }).catch(() => [] as { cabNumber: string; amount: number; date: Date }[])
-    : [];
+  const brokerExpensesYear = brokerExpensesAll.filter((e) => {
+    const d = new Date(e.date);
+    return d >= yearStart && d < yearEnd && companyCabNumbers.includes(e.cabNumber);
+  });
   const curBrokerExpenses = brokerExpensesYear.filter((e) => new Date(e.date).getMonth() + 1 === curMonth);
 
   // --- Current-month per-vehicle stats ---
@@ -146,7 +151,12 @@ export default async function DashboardPage() {
   const brokerTxsYear  = brokerTxsAll.filter((t) => t.year === curYear);
   const brokerTxsMonth = brokerTxsYear.filter((t) => t.month === curMonth);
 
-  function aggregateBroker(txs: typeof brokerTxsAll) {
+  /** Merge BrokerTransactions + BrokerExpenses into per-broker stats.
+   *  Both count as company income except PAYOUT transactions (outflow). */
+  function aggregateBroker(
+    txs: typeof brokerTxsAll,
+    exps: typeof brokerExpensesAll,
+  ) {
     const map = new Map<string, { id: string; name: string; total: number; paid: number; pending: number; outflow: number }>();
     for (const t of txs) {
       const cur = map.get(t.brokerId) ?? { id: t.brokerId, name: t.broker.name, total: 0, paid: 0, pending: 0, outflow: 0 };
@@ -160,15 +170,26 @@ export default async function DashboardPage() {
       }
       map.set(t.brokerId, cur);
     }
+    for (const e of exps) {
+      const cur = map.get(e.brokerId) ?? { id: e.brokerId, name: e.broker.name, total: 0, paid: 0, pending: 0, outflow: 0 };
+      if (e.paid) cur.paid    += e.amount;
+      else        cur.pending += e.amount;
+      cur.total += e.amount;
+      map.set(e.brokerId, cur);
+    }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }
 
   // Current-month stats drive the P&L "Broker Profit" stat at the top.
-  const brokerStatsMonth = aggregateBroker(brokerTxsMonth);
+  const brokerExpensesMonth = brokerExpensesAll.filter((e) => {
+    const d = new Date(e.date);
+    return d.getFullYear() === curYear && d.getMonth() + 1 === curMonth;
+  });
+  const brokerStatsMonth = aggregateBroker(brokerTxsMonth, brokerExpensesMonth);
   const brokerProfit     = brokerStatsMonth.reduce((a, b) => a + b.total, 0);
 
   // All-time stats seed the Brokers section (default filter = All Time).
-  const brokerStatsAllTime = aggregateBroker(brokerTxsAll);
+  const brokerStatsAllTime = aggregateBroker(brokerTxsAll, brokerExpensesAll);
   const brokerAggregateAllTime = {
     total:       brokerStatsAllTime.reduce((a, b) => a + b.total,   0),
     paid:        brokerStatsAllTime.reduce((a, b) => a + b.paid,    0),
@@ -193,6 +214,12 @@ export default async function DashboardPage() {
     const xs = ytdCompanyExpenses.filter((x) => x.month === m.month && x.year === m.year);
     const bx = brokerExpensesYear.filter((e) => new Date(e.date).getMonth() + 1 === m.month);
     const bt = brokerTxsYear.filter((t) => t.month === m.month);
+    // All broker expenses this month (not just company-cab-tagged); they're
+    // company income in Yash's model.
+    const allBrokerExpThisMonth = brokerExpensesAll.filter((e) => {
+      const d = new Date(e.date);
+      return d.getFullYear() === m.year && d.getMonth() + 1 === m.month;
+    });
     const gross     = ss.reduce((a, s) => a + s.grossEarnings,         0);
     const driverPay = ss.reduce((a, s) => a + s.netDriverPay,          0);
     const gas       = ss.reduce((a, s) => a + s.gasDeduction,          0);
@@ -203,7 +230,8 @@ export default async function DashboardPage() {
                         + bx.reduce((a, e) => a + e.amount, 0);
     const otherExp      = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
     const vehicleP      = gross - driverPay - gas - extra - perVehicleExp;
-    const brokerIn      = bt.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+    const brokerIn      = bt.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0)
+                        + allBrokerExpThisMonth.reduce((a, e) => a + e.amount, 0);
     const brokerOut     = bt.filter((t) => t.type === 'PAYOUT').reduce((a, t) => a + t.amount, 0);
     const brokerP       = brokerIn - brokerOut;
     return {

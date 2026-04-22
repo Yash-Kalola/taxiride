@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const yearStart = new Date(year, 0, 1);
     const yearEnd   = new Date(year + 1, 0, 1);
-    const [sheets, expenses, brokerExps, brokerTxs] = await Promise.all([
+    const [sheets, expenses, brokerExps, brokerTxs, allBrokerExps] = await Promise.all([
       cabs.length > 0
         ? prisma.dailySheet.findMany({
             where:  { vehicleNumber: { in: cabs }, year },
@@ -44,6 +44,10 @@ export async function GET(request: NextRequest) {
         where:  { year, status: { not: 'VOID' } },
         select: { month: true, amount: true, type: true },
       }),
+      prisma.brokerExpense.findMany({
+        where:  { date: { gte: yearStart, lt: yearEnd } },
+        select: { date: true, amount: true },
+      }),
     ]);
 
     const rows: YearlyRow[] = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
@@ -59,7 +63,9 @@ export async function GET(request: NextRequest) {
                           + bx.reduce((a, e) => a + e.amount, 0);
       const otherExp      = xs.filter((x) => !x.vehicleNumber).reduce((a, x) => a + x.amount, 0);
       const vehicleP      = gross - driverPay - gas - extra - perVehicleExp;
-      const brokerIn      = bt.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0);
+      const brokerExpsInMonth = allBrokerExps.filter((e) => new Date(e.date).getMonth() + 1 === m);
+      const brokerIn      = bt.filter((t) => t.type !== 'PAYOUT').reduce((a, t) => a + t.amount, 0)
+                          + brokerExpsInMonth.reduce((a, e) => a + e.amount, 0);
       const brokerOut     = bt.filter((t) => t.type === 'PAYOUT').reduce((a, t) => a + t.amount, 0);
       const brokerP       = brokerIn - brokerOut;
       return {
