@@ -280,7 +280,7 @@ export default async function DashboardPage() {
           <BigStat
             label="Broker Profit"
             value={brokerProfit}
-            sub={`${brokerStatsMonth.length} broker${brokerStatsMonth.length !== 1 ? 's' : ''} — see below`}
+            sub={`${MONTHS[curMonth - 1]} only · ${brokerStatsMonth.length} broker${brokerStatsMonth.length !== 1 ? 's' : ''}`}
             tone={brokerProfit >= 0 ? 'positive' : 'negative'}
           />
           <BigStat
