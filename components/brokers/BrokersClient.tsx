@@ -15,10 +15,15 @@ interface Transaction {
   description: string; month: number; year: number; createdAt: string;
 }
 
+interface BrokerExpenseRef {
+  id: string; amount: number; paid: boolean;
+}
+
 interface Broker {
   id: string; name: string; phone: string; billingDay: number; standRentAmount: number;
   startDate: string; endDate: string | null; isActive: boolean;
   transactions: Transaction[];
+  expenses: BrokerExpenseRef[];
   vehicles: { id: string }[];
 }
 
@@ -27,12 +32,17 @@ type ModalMode = 'add' | 'edit' | null;
 
 const EMPTY_FORM = { name: '', phone: '', billingDay: '1', standRentAmount: '200', startDate: '' };
 
-function owedToUs(transactions: Transaction[]): number {
-  return transactions
+/** Money the broker still owes the company — unpaid non-PAYOUT BrokerTransactions
+ *  PLUS unpaid BrokerExpenses (charges we billed them). */
+function owedToUs(transactions: Transaction[], expenses: BrokerExpenseRef[]): number {
+  const txTotal  = transactions
     .filter((t) => t.type !== 'PAYOUT' && t.status === 'PENDING')
     .reduce((s, t) => s + t.amount, 0);
+  const expTotal = expenses.filter((e) => !e.paid).reduce((s, e) => s + e.amount, 0);
+  return txTotal + expTotal;
 }
 
+/** Money the company still owes the broker — unpaid PAYOUT BrokerTransactions. */
 function weOweThem(transactions: Transaction[]): number {
   return transactions
     .filter((t) => t.type === 'PAYOUT' && t.status === 'PENDING')
@@ -205,7 +215,7 @@ export default function BrokersClient({ initialBrokers }: { initialBrokers: Brok
                     {b.vehicles.length > 0 && <p className="text-xs text-gray-400 mt-0.5">{b.vehicles.length} cab{b.vehicles.length !== 1 ? 's' : ''}</p>}
                   </td>
                   <td className="px-5 py-4 text-sm font-semibold text-gray-900">
-                    {formatCurrency(owedToUs(b.transactions))}
+                    {formatCurrency(owedToUs(b.transactions, b.expenses ?? []))}
                   </td>
                   <td className="px-5 py-4 text-sm font-semibold text-gray-900">
                     {formatCurrency(weOweThem(b.transactions))}

@@ -8,7 +8,11 @@ export default async function BrokersPage() {
   try {
     brokersRaw = await prisma.broker.findMany({
       orderBy: { name: 'asc' },
-      include: { transactions: true, vehicles: { where: { isActive: true } } },
+      include: {
+        transactions: true,
+        expenses:     { select: { id: true, amount: true, paid: true } },
+        vehicles:     { where: { isActive: true } },
+      },
     });
   } catch {}
 
