@@ -7,12 +7,11 @@ import { formatCurrency } from './tax';
 import { SENDER, BANKING } from './constants';
 import type { Company, Invoice, Ride } from '@prisma/client';
 
-// Load logo once at module level — graceful fallback if not present.
+// Load an image once at module level — graceful fallback if not present.
 // Detects actual MIME type from magic bytes so JPEG files named .png work correctly.
-function loadLogoBase64(): string | null {
+function loadImageBase64(relativePath: string): string | null {
   try {
-    const logoPath = path.join(process.cwd(), 'public', 'logo.png');
-    const buf = fs.readFileSync(logoPath);
+    const buf = fs.readFileSync(path.join(process.cwd(), 'public', relativePath));
     const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
     const mime   = isJpeg ? 'image/jpeg' : 'image/png';
     return `data:${mime};base64,${buf.toString('base64')}`;
@@ -20,7 +19,8 @@ function loadLogoBase64(): string | null {
     return null;
   }
 }
-const LOGO_SRC = loadLogoBase64();
+const LOGO_SRC = loadImageBase64('logo.png');
+const QR_SRC   = loadImageBase64('assets/scan-to-pay.png');
 
 const styles = StyleSheet.create({
   page:          { fontFamily: 'Helvetica', fontSize: 10, padding: 44, color: '#111827', backgroundColor: '#ffffff' },
@@ -76,6 +76,11 @@ const styles = StyleSheet.create({
   footerBankKey:  { fontSize: 7.5, color: '#6B7280' },
   footerBankVal:  { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: '#374151' },
 
+  footerQrBox:    { alignItems: 'center', marginRight: 12 },
+  footerQrLabel:  { fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: '#4F46E5', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.6 },
+  footerQrImg:    { width: 60, height: 60 },
+  footerQrHint:   { fontSize: 7, color: '#6B7280', marginTop: 2 },
+
   // Page 2 ride table — LEGAL landscape (14" × 8.5"). Column widths tuned
   // to fit Trip ID | Date | Customer | Phone | Pickup | Dropoff | Cab | Amount
   // without wrapping the tabular fields; pickup/dropoff flex to take remaining space.
@@ -119,11 +124,19 @@ function PageFooter() {
         {/* Left: payment instructions */}
         <View style={styles.footerLeft}>
           <Text style={styles.footerText}>All cheques payable to {SENDER.name}</Text>
-          <Text style={styles.footerText}>Email: {SENDER.email}</Text>
-          <Text style={styles.footerText}>HST is included in the total amount  ·  HST # {SENDER.hst}</Text>
           <Text style={styles.footerText}>Due 30 days from date of invoice</Text>
-          <Text style={styles.footerText}>To pay by EFT/debit, email {SENDER.email}</Text>
+          <Text style={styles.footerText}>Pay by debit or credit — scan the QR code on the right</Text>
+          <Text style={styles.footerText}>To pay by e-transfer, email {SENDER.headerEmail}</Text>
+          <Text style={styles.footerText}>For EFT, use the banking details →</Text>
         </View>
+        {/* Middle: Pay-by-QR */}
+        {QR_SRC && (
+          <View style={styles.footerQrBox}>
+            <Text style={styles.footerQrLabel}>Pay by Debit / Credit</Text>
+            <Image src={QR_SRC} style={styles.footerQrImg} />
+            <Text style={styles.footerQrHint}>Scan to pay</Text>
+          </View>
+        )}
         {/* Right: banking block */}
         <View style={styles.footerBankBox}>
           <Text style={styles.footerBankTitle}>Direct Deposit / EFT</Text>
@@ -160,7 +173,7 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
             <Text style={styles.headerSub}>{SENDER.address}</Text>
             <Text style={styles.headerSub}>{SENDER.city}</Text>
             <Text style={styles.headerSub}>{SENDER.phone}</Text>
-            <Text style={styles.headerSub}>{SENDER.email}</Text>
+            <Text style={styles.headerSub}>{SENDER.headerEmail}</Text>
             <Text style={[styles.headerSub, { marginTop: 3 }]}>HST # {SENDER.hst}</Text>
           </View>
         </View>

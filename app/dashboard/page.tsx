@@ -3,19 +3,21 @@ import { formatCurrency } from '@/lib/tax';
 import { MONTHS } from '@/lib/constants';
 import PageHeader from '@/components/ui/PageHeader';
 import DashboardRefresh from '@/components/dashboard/DashboardRefresh';
-import { RevenueExpenseChart, ProfitExpenseLineChart, ExpenseBreakdownChart, type MonthPoint } from '@/components/dashboard/DashboardCharts';
+import { RevenueExpenseChart, ProfitExpenseLineChart, type MonthPoint } from '@/components/dashboard/DashboardCharts';
 import DashboardPDFButton from '@/components/dashboard/DashboardPDFButton';
 import BrokersSection from '@/components/dashboard/BrokersSection';
-import Link from 'next/link';
+import CompanyPLSection from '@/components/dashboard/CompanyPLSection';
+import PerVehicleSection from '@/components/dashboard/PerVehicleSection';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Dashboard layout priority (top → bottom), per Yash's spec:
- *   1. Company P&L (current month): Vehicle + Broker − Other Expense = Total
- *   2. Per-Vehicle profit row for every company cab (current month)
- *   3. Year-to-date trend (12 months of revenue / expenses / profit)
- *   4. Low-priority: invoice summary, Companies/Rides links
+ * Dashboard layout (top → bottom):
+ *   1. Company P&L — filterable by Month/Year (defaults to current)
+ *   2. Brokers   — filterable, defaults to "All Time"
+ *   3. Invoices  — consolidated summary (moved above Per-Vehicle per Yash)
+ *   4. Per-Vehicle profit — filterable by Month/Year
+ *   5. Year-to-date trend (12 months of revenue / expenses / profit)
  *
  * Formulas per Yash's April 2026 spec:
  *   - Vehicle Profit = Σ(gross − driver 40% − gas − extra − repairs)
@@ -262,44 +264,25 @@ export default async function DashboardPage() {
       <PageHeader title="Dashboard" description={`Company P&L · ${MONTHS[curMonth - 1]} ${curYear}`} action={<DashboardRefresh />} />
 
       {/* =================================================================
-          1. Company P&L — current month
+          1. Company P&L — filterable by Month/Year (defaults to current month)
           Vehicle + Broker − Other = Total.
           ================================================================= */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Company P&amp;L — {MONTHS[curMonth - 1]} {curYear}</h2>
-          <p className="text-xs text-gray-400">Rough first draft · numbers still being refined</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <BigStat
-            label="Vehicle Profit"
-            value={vehicleProfit}
-            sub={`${perVehicle.length} company cab${perVehicle.length !== 1 ? 's' : ''}`}
-            tone={vehicleProfit >= 0 ? 'positive' : 'negative'}
-          />
-          <BigStat
-            label="Broker Profit"
-            value={brokerProfit}
-            sub={`${MONTHS[curMonth - 1]} only · ${brokerStatsMonth.length} broker${brokerStatsMonth.length !== 1 ? 's' : ''}`}
-            tone={brokerProfit >= 0 ? 'positive' : 'negative'}
-          />
-          <BigStat
-            label="Other Expense"
-            value={-otherExpense}
-            sub="from Company Expenses"
-            tone={otherExpense > 0 ? 'muted-negative' : 'muted'}
-          />
-          <BigStat
-            label="Total Profit"
-            value={totalProfit}
-            sub="Vehicle + Broker − Other"
-            tone={totalProfit >= 0 ? 'positive-strong' : 'negative-strong'}
-          />
-        </div>
-      </section>
+      <CompanyPLSection
+        initialPL={{
+          vehicleProfit,
+          brokerProfit,
+          otherExpense,
+          totalProfit,
+          brokerCount:  brokerStatsMonth.length,
+          vehicleCount: perVehicle.length,
+        }}
+        initialMonth={curMonth}
+        initialYear={curYear}
+        availableYears={availableYears}
+      />
 
       {/* =================================================================
-          1b. Brokers — filterable per-broker cards + aggregate summary
+          2. Brokers — filterable per-broker cards + aggregate summary
           Default filter: All Time (Yash wanted all-time and/or monthly).
           ================================================================= */}
       <BrokersSection
@@ -311,93 +294,31 @@ export default async function DashboardPage() {
       />
 
       {/* =================================================================
-          2. Per-Vehicle breakdown (current month)
+          3. Invoices — consolidated summary (moved up from bottom per Yash's
+          request: "bring invoice box after broker all time box on dashboard").
           ================================================================= */}
       <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Per-Vehicle Profit — {MONTHS[curMonth - 1]} {curYear}</h2>
-          <DashboardPDFButton href={`/api/dashboard/per-vehicle-pdf?month=${curMonth}&year=${curYear}`} />
-        </div>
-        {perVehicle.length === 0 ? (
-          <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 px-6 py-10 text-center text-sm text-gray-400">
-            No company-owned cabs yet. <Link href="/vehicles" className="text-indigo-600 hover:text-indigo-700">Mark a car as Company</Link> to include it here.
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Cab #', 'Gross', 'Driver 40%', 'Gas', 'Extra', 'Other', 'Profit'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {perVehicle.map((v) => (
-                  <tr key={v.cabNumber} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono font-semibold text-gray-900">#{v.cabNumber}</td>
-                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{formatCurrency(v.gross)}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.driverPay)}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.gas)}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">−{formatCurrency(v.extra)}</td>
-                    <td className={`px-4 py-3 whitespace-nowrap ${v.repairs > 0 ? 'text-gray-500' : 'text-gray-300'}`} title="Sum of every expense tagged with this cab # — from Company Expenses AND Broker Expenses">
-                      {v.repairs > 0 ? `−${formatCurrency(v.repairs)}` : '—'}
-                    </td>
-                    <td className={`px-4 py-3 font-semibold whitespace-nowrap ${v.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(v.profit)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-gray-200 bg-gray-50">
-                  <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Totals</td>
-                  <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">{formatCurrency(perVehicle.reduce((a, v) => a + v.gross,     0))}</td>
-                  <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.driverPay, 0))}</td>
-                  <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.gas,       0))}</td>
-                  <td className="px-4 py-3 font-semibold text-gray-500 whitespace-nowrap">−{formatCurrency(perVehicle.reduce((a, v) => a + v.extra,     0))}</td>
-                  <td className={`px-4 py-3 font-semibold whitespace-nowrap ${perVehicle.reduce((a, v) => a + v.repairs, 0) > 0 ? 'text-gray-500' : 'text-gray-300'}`}>
-                    {perVehicle.reduce((a, v) => a + v.repairs, 0) > 0
-                      ? `−${formatCurrency(perVehicle.reduce((a, v) => a + v.repairs, 0))}`
-                      : '—'}
-                  </td>
-                  <td className={`px-4 py-3 font-bold whitespace-nowrap ${vehicleProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(vehicleProfit)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-        <p className="mt-2 text-xs text-gray-400">
-          <strong>Other</strong> column sums every expense tagged with the cab # — from <Link href="/company-expenses" className="underline hover:text-gray-600">Company Expenses</Link> (repairs, maintenance) and <Link href="/expenses" className="underline hover:text-gray-600">Broker Expenses</Link> (anything the broker took from that cab&apos;s earnings).
-        </p>
-
-        {/* Per-vehicle pie charts: where each cab's gross went this month */}
-        {perVehicle.length > 0 && (
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {perVehicle.map((v) => {
-              const slices = [
-                { label: 'Driver 40%', value: v.driverPay, color: '#64748B' },
-                { label: 'Gas',        value: v.gas,       color: '#4F46E5' },
-                { label: 'Extra',      value: v.extra,     color: '#F59E0B' },
-                { label: 'Other',      value: v.repairs,   color: '#EF4444' },
-                { label: 'Profit',     value: Math.max(v.profit, 0), color: '#10B981' },
-              ];
-              const sub = v.profit >= 0
-                ? `Gross ${formatCurrency(v.gross)} · Profit ${formatCurrency(v.profit)}`
-                : `Gross ${formatCurrency(v.gross)} · Loss ${formatCurrency(v.profit)}`;
-              return (
-                <ExpenseBreakdownChart
-                  key={v.cabNumber}
-                  title={`Cab #${v.cabNumber}`}
-                  sub={sub}
-                  slices={slices}
-                />
-              );
-            })}
-          </div>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Invoices</h2>
+        <InvoiceSummaryCard stats={stats} />
+        {investorCarCount > 0 && (
+          <p className="mt-4 text-xs text-gray-400">
+            Company P&amp;L excludes {investorCarCount} investor car{investorCarCount !== 1 ? 's' : ''} — they&apos;re tracked separately and don&apos;t roll into company profit.
+          </p>
         )}
       </section>
 
       {/* =================================================================
-          3. Year-to-date — 12-month trend + per-month table
+          4. Per-Vehicle breakdown — filterable by Month/Year
+          ================================================================= */}
+      <PerVehicleSection
+        initialPerVehicle={perVehicle}
+        initialMonth={curMonth}
+        initialYear={curYear}
+        availableYears={availableYears}
+      />
+
+      {/* =================================================================
+          5. Year-to-date — 12-month trend + per-month table
           ================================================================= */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
@@ -463,23 +384,6 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      {/* =================================================================
-          4. Low-priority — consolidated invoice summary
-          Yash: "this data we can see inside so that not priority"
-          + "i need this same as broker profit like total is big and rest
-             of all down" → single card, big total + breakdown underneath.
-          ================================================================= */}
-      <section className="pt-4 border-t border-gray-100">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Invoices</h2>
-        <InvoiceSummaryCard stats={stats} />
-
-        {investorCarCount > 0 && (
-          <p className="mt-4 text-xs text-gray-400">
-            Company P&amp;L excludes {investorCarCount} investor car{investorCarCount !== 1 ? 's' : ''} — they&apos;re tracked separately and don&apos;t roll into company profit.
-          </p>
-        )}
-      </section>
-
     </div>
   );
 }
@@ -522,29 +426,3 @@ function InvoiceSummaryCard({ stats }: {
   );
 }
 
-/** Big stat card for the top-row P&L block. */
-function BigStat({ label, value, sub, tone }: {
-  label: string;
-  value: number;
-  sub?:  string;
-  tone:  'positive' | 'positive-strong' | 'negative' | 'negative-strong' | 'muted' | 'muted-negative';
-}) {
-  const color =
-    tone === 'positive-strong' ? 'text-emerald-700' :
-    tone === 'negative-strong' ? 'text-red-700'     :
-    tone === 'positive'        ? 'text-emerald-600' :
-    tone === 'negative'        ? 'text-red-600'     :
-    tone === 'muted-negative'  ? 'text-amber-600'   :
-                                 'text-gray-500';
-  const ring =
-    tone === 'positive-strong' ? 'ring-emerald-200 bg-emerald-50' :
-    tone === 'negative-strong' ? 'ring-red-200 bg-red-50'         :
-                                 'ring-gray-200 bg-white';
-  return (
-    <div className={`rounded-2xl p-5 shadow-sm ring-1 ${ring}`}>
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{label}</p>
-      <p className={`mt-2 text-3xl font-bold ${color}`}>{formatCurrency(value)}</p>
-      {sub && <p className="mt-1 text-xs text-gray-500">{sub}</p>}
-    </div>
-  );
-}

@@ -139,19 +139,25 @@ export function renderInvoiceEmailHTML(params: {
   return { subject, html, text };
 }
 
+// Hardcoded SMTP config — Microsoft 365 mailbox for Vetstaxi.
+// Env vars still override in dev so a local .env can point elsewhere.
+const SMTP_HOST   = process.env.SMTP_HOST   || 'smtp.office365.com';
+const SMTP_PORT   = parseInt(process.env.SMTP_PORT || '587');
+const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : false;
+const SMTP_USER   = process.env.SMTP_USER   || 'accountspayable@vetstaxi.ca';
+const SMTP_PASS   = process.env.SMTP_PASS   || 'Vetstaxi@1';
+const EMAIL_FROM_DEFAULT = process.env.EMAIL_FROM || SMTP_USER;
+
 function smtpConfigured(): boolean {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_PASS);
+  return !!(SMTP_HOST && SMTP_PASS);
 }
 
 function getTransport() {
   return nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+    host:   SMTP_HOST,
+    port:   SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth:   { user: SMTP_USER, pass: SMTP_PASS },
   });
 }
 
@@ -175,7 +181,7 @@ export async function sendEmailWithPDF(params: {
   }
   const transporter = getTransport();
   await transporter.sendMail({
-    from:    params.from || process.env.EMAIL_FROM || process.env.SMTP_USER,
+    from:    params.from || EMAIL_FROM_DEFAULT,
     to:      params.to,
     subject: params.subject,
     text:    params.text,
@@ -222,7 +228,7 @@ export async function sendInvoiceEmail(params: {
 
   const transporter = getTransport();
   await transporter.sendMail({
-    from:    params.from || process.env.EMAIL_FROM || process.env.SMTP_USER,
+    from:    params.from || EMAIL_FROM_DEFAULT,
     to:      params.to,
     subject,
     text,
