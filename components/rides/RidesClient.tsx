@@ -13,11 +13,12 @@ interface Ride {
   id: string; companyId: string; month: string; year: number;
   jobId: string; vehicleNumber: string; pickupLocation: string;
   dropoffLocation: string; passenger: string; driver: string;
+  customerPhone: string;
   dateTime: string; amount: number; invoiceId: string | null;
   company: { companyName: string; accountId: string };
 }
 
-const EMPTY_RIDE = { companyId: '', month: '', year: new Date().getFullYear(), jobId: '', vehicleNumber: '', pickupLocation: '', dropoffLocation: '', passenger: '', driver: '', dateTime: '', amount: 0 };
+const EMPTY_RIDE = { companyId: '', month: '', year: new Date().getFullYear(), jobId: '', vehicleNumber: '', pickupLocation: '', dropoffLocation: '', passenger: '', driver: '', customerPhone: '', dateTime: '', amount: 0 };
 
 export default function RidesClient({ initialRides, companies }: { initialRides: Ride[]; companies: Company[] }) {
   const [rides, setRides]           = useState<Ride[]>(initialRides);
@@ -59,7 +60,9 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
             jobId: form.jobId, vehicleNumber: form.vehicleNumber,
             pickupLocation: form.pickupLocation, dropoffLocation: form.dropoffLocation,
             passenger: form.passenger, driver: form.driver,
+            customerPhone: form.customerPhone,
             dateTime: form.dateTime, amount: form.amount,
+            month: form.month, year: form.year,
           }),
         });
         const data = await res.json();
@@ -85,6 +88,7 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
       jobId: ride.jobId, vehicleNumber: ride.vehicleNumber,
       pickupLocation: ride.pickupLocation, dropoffLocation: ride.dropoffLocation,
       passenger: ride.passenger, driver: ride.driver,
+      customerPhone: ride.customerPhone ?? '',
       dateTime: ride.dateTime, amount: ride.amount,
     });
     setError('');
@@ -119,6 +123,7 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
         dropoffLocation: String(row['Dropoff'] ?? row['Dropoff Location'] ?? row['dropoffLocation'] ?? ''),
         passenger:       String(row['Passenger'] ?? row['passenger'] ?? ''),
         driver:          String(row['Driver']    ?? row['driver']    ?? ''),
+        customerPhone:   String(row['Phone'] ?? row['Customer Phone'] ?? row['customerPhone'] ?? ''),
         dateTime:        String(row['Date/Time'] ?? row['Date'] ?? row['dateTime'] ?? ''),
         amount:          parseFloat(String(row['Amount'] ?? row['amount'] ?? '0')) || 0,
       }));
@@ -136,10 +141,13 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
       if (!res.ok) { setError(data.error ?? 'Import failed'); return; }
 
       const skippedMsg = skipped > 0 ? ` (${skipped} row${skipped > 1 ? 's' : ''} skipped — zero amount)` : '.';
-      setImportResult(`Successfully imported ${data.imported} ride${data.imported !== 1 ? 's' : ''}${skippedMsg}`);
+      setImportResult(`Successfully imported ${data.imported} ride${data.imported !== 1 ? 's' : ''}${skippedMsg} Filter set to show only the imported batch — use Edit/Delete on each row, or change Month/Year if you imported into the wrong period.`);
       // Refresh rides
       const updated = await fetch(`/api/rides?companyId=${importForm.companyId}&month=${importForm.month}&year=${importForm.year}`).then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
       setRides((prev) => [...updated.filter((r: Ride) => !prev.some((p) => p.id === r.id)), ...prev]);
+      // Auto-filter to the imported batch so the user immediately sees what landed.
+      setFilterCompany(importForm.companyId);
+      setFilterMonth(importForm.month);
     } catch (e) { setError(String(e)); }
     finally { setSaving(false); }
   }
@@ -180,7 +188,7 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Date/Time', 'Company', 'Month', 'Pickup', 'Dropoff', 'Cab #', 'Amount', 'Status', ''].map((h) => (
+                  {['Trip ID', 'Date/Time', 'Company', 'Month', 'Pickup', 'Dropoff', 'Phone', 'Cab #', 'Amount', 'Status', ''].map((h) => (
                     <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -188,11 +196,13 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
               <tbody className="divide-y divide-gray-50">
                 {filtered.map((r) => (
                   <tr key={r.id} className="group hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3.5 text-sm text-gray-700 font-mono">{r.jobId || '—'}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{r.dateTime || '—'}</td>
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{r.company.companyName}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">{r.month} {r.year}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600 max-w-[140px] truncate">{r.pickupLocation || '—'}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600 max-w-[140px] truncate">{r.dropoffLocation || '—'}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600 font-mono whitespace-nowrap">{r.customerPhone || '—'}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600 font-mono">{r.vehicleNumber || '—'}</td>
                     <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{formatCurrency(r.amount)}</td>
                     <td className="px-4 py-3.5">
@@ -225,16 +235,16 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
               </Select>
             </div>
-            <Select label="Month" {...field('month')} disabled={!!editingRide}>
+            <Select label="Month" {...field('month')}>
               <option value="">Select month…</option>
               {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
             </Select>
-            <Select label="Year" {...field('year')} disabled={!!editingRide}>
+            <Select label="Year" {...field('year')}>
               {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
             </Select>
           </div>
           {editingRide && (
-            <p className="text-xs text-gray-400 -mt-2">Company, month, and year cannot be changed after a ride is created.</p>
+            <p className="text-xs text-gray-400 -mt-2">Company cannot be changed. Month/Year can be corrected if a ride was imported into the wrong period.</p>
           )}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Date / Time" placeholder="2025-01-15 14:30" {...field('dateTime')} />
@@ -244,8 +254,11 @@ export default function RidesClient({ initialRides, companies }: { initialRides:
             <Input label="Pickup Location" placeholder="123 Main St" {...field('pickupLocation')} />
             <Input label="Dropoff Location" placeholder="456 Oak Ave" {...field('dropoffLocation')} />
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Customer Phone" placeholder="+1 705 555 0123" {...field('customerPhone')} />
             <Input label="Cab / Vehicle #" placeholder="CAB-01" {...field('vehicleNumber')} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Passenger" placeholder="John Doe" {...field('passenger')} />
             <Input label="Driver" placeholder="Driver Name" {...field('driver')} />
           </div>

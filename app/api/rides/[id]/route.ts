@@ -10,8 +10,13 @@ const updateSchema = z.object({
   dropoffLocation:z.string().optional(),
   passenger:      z.string().optional(),
   driver:         z.string().optional(),
+  customerPhone:  z.string().optional(),
   dateTime:       z.string().optional(),
   amount:         z.coerce.number().min(0).optional(),
+  // Allow correcting month/year on imported rides (Yash's case: imported May
+  // rides as April by mistake — needs the ability to fix without re-import).
+  month:          z.string().optional(),
+  year:           z.coerce.number().int().optional(),
 });
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {

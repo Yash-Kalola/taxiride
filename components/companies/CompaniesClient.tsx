@@ -14,10 +14,11 @@ interface Company {
   poNumber: string;
   expectedMonthlyRides: number;
   email: string;
+  notes: string;
   _count: { rides: number; invoices: number };
 }
 
-const EMPTY = { accountId: '', companyName: '', contactName: '', address: '', poNumber: '', expectedMonthlyRides: 0, email: '' };
+const EMPTY = { accountId: '', companyName: '', contactName: '', address: '', poNumber: '', expectedMonthlyRides: 0, email: '', notes: '' };
 
 export default function CompaniesClient({ initialCompanies }: { initialCompanies: Company[] }) {
   const [companies, setCompanies]   = useState<Company[]>(initialCompanies);
@@ -30,7 +31,7 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
 
   function openAdd()  { setForm(EMPTY); setEditing(null); setError(''); setModal('add'); }
   function openEdit(c: Company) {
-    setForm({ accountId: c.accountId, companyName: c.companyName, contactName: c.contactName ?? '', address: c.address, poNumber: c.poNumber, expectedMonthlyRides: c.expectedMonthlyRides, email: c.email });
+    setForm({ accountId: c.accountId, companyName: c.companyName, contactName: c.contactName ?? '', address: c.address, poNumber: c.poNumber, expectedMonthlyRides: c.expectedMonthlyRides, email: c.email, notes: c.notes ?? '' });
     setEditing(c); setError(''); setModal('edit');
   }
 
@@ -138,6 +139,18 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
             <Input label="PO #" placeholder="PO-842" {...field('poNumber')} />
           </div>
           <Input label="Expected Monthly Rides" type="number" min={0} {...field('expectedMonthlyRides')} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes <span className="text-xs font-normal text-gray-400">(internal — not shown on invoices)</span>
+            </label>
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              rows={3}
+              placeholder="Anything to remember about this company — special instructions, payment terms, contact preferences…"
+              className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>

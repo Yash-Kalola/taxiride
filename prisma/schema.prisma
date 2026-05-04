@@ -16,6 +16,7 @@ model Company {
   poNumber             String    @default("")
   expectedMonthlyRides Int       @default(0)
   email                String    @default("")
+  notes                String    @default("")  // Free-text per-company notes
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   rides                Ride[]

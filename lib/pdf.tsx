@@ -170,6 +170,7 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
           {LOGO_SRC && <Image src={LOGO_SRC} style={styles.headerLogo} />}
           <View style={styles.headerInfo}>
             <Text style={styles.headerName}>{SENDER.name}</Text>
+            <Text style={[styles.headerSub, styles.bold, { marginBottom: 3, color: '#374151' }]}>PO # {SENDER.poNumber}</Text>
             <Text style={styles.headerSub}>{SENDER.address}</Text>
             <Text style={styles.headerSub}>{SENDER.city}</Text>
             <Text style={styles.headerSub}>{SENDER.phone}</Text>
@@ -216,9 +217,14 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
           <Text style={styles.colAmtHeader}>Amount</Text>
         </View>
         <View style={styles.tableRow}>
-          <Text style={styles.colDesc}>
-            {rides.length} corporate ride{rides.length !== 1 ? 's' : ''} — {invoice.month} {invoice.year}
-          </Text>
+          <View style={styles.colDesc}>
+            <Text>
+              {rides.length} corporate ride{rides.length !== 1 ? 's' : ''} — {invoice.month} {invoice.year}
+            </Text>
+            <Text style={{ fontSize: 8, color: '#9CA3AF', marginTop: 2 }}>
+              See page 2 for full ride details — Trip ID, Customer Phone, Pickup, Dropoff, Cab #
+            </Text>
+          </View>
           <Text style={styles.colAmt}>{formatCurrency(invoice.amountPreTax)}</Text>
         </View>
 

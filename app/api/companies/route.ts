@@ -10,6 +10,7 @@ const createSchema = z.object({
   poNumber:             z.string().default(''),
   expectedMonthlyRides: z.coerce.number().int().min(0).default(0),
   email:                z.string().email().or(z.literal('')).default(''),
+  notes:                z.string().default(''),
 });
 
 export async function GET() {

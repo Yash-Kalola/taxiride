@@ -24,7 +24,8 @@ export const SENDER = {
   // billing mailbox in the footer.
   email:       'accountspayable@vetstaxi.ca',
   headerEmail: 'yashkalola@vetstaxi.ca',
-  hst: '787334432RT0001',
+  hst:         '787334432RT0001',
+  poNumber:    '842',
 } as const;
 
 export const BANKING = {

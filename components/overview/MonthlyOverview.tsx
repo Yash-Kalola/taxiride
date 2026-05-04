@@ -328,6 +328,10 @@ export default function MonthlyOverview({
             </button>
           )}
           <hr className="my-1 border-gray-100" />
+          <button onClick={() => { window.open(`/api/invoices/${actionMenu.inv.id}/pdf`, '_blank'); setActionMenu(null); }}
+            className="w-full px-3 py-2 text-left hover:bg-gray-50 text-gray-700 flex items-center gap-2">
+            <span>📄</span> Generate PDF
+          </button>
           <Link href={`/invoices/${actionMenu.inv.id}`} onClick={() => setActionMenu(null)}
             className="block w-full px-3 py-2 text-left hover:bg-gray-50 text-indigo-600 font-medium">
             View Invoice →

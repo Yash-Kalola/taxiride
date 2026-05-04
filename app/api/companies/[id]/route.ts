@@ -10,6 +10,7 @@ const updateSchema = z.object({
   poNumber:             z.string().optional(),
   expectedMonthlyRides: z.coerce.number().int().min(0).optional(),
   email:                z.string().email().or(z.literal('')).optional(),
+  notes:                z.string().optional(),
 });
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {

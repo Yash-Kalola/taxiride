@@ -14,6 +14,7 @@ export default async function RidesPage() {
           id: true, companyId: true, month: true, year: true,
           jobId: true, vehicleNumber: true, pickupLocation: true,
           dropoffLocation: true, passenger: true, driver: true,
+          customerPhone: true,
           dateTime: true, amount: true, invoiceId: true,
           company: { select: { companyName: true, accountId: true } },
         },

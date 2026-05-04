@@ -12,6 +12,7 @@ const createSchema = z.object({
   dropoffLocation:z.string().default(''),
   passenger:      z.string().default(''),
   driver:         z.string().default(''),
+  customerPhone:  z.string().default(''),
   dateTime:       z.string().default(''),
   amount:         z.coerce.number().min(0),
 });
