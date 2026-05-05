@@ -57,15 +57,22 @@ export default function SendInvoiceModal({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ ...(extraPayload ?? {}), ...(from ? { from } : {}) }),
       });
+      // Handle non-JSON responses (e.g. when the server returns an HTML error page)
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        setError(res.ok ? 'Unexpected response from server' : `Server error (${res.status}) — check that the database is configured correctly.`);
+        setSending(false);
+        return;
+      }
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        setError(typeof data?.error === 'string' ? data.error : 'Send failed');
+        setError(typeof data?.error === 'string' ? data.error : 'Send failed — please try again.');
         setSending(false);
         return;
       }
       onSent(data);
     } catch {
-      setError('Network error — try again');
+      setError('Network error — check your connection and try again');
       setSending(false);
     }
   }

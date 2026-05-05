@@ -21,6 +21,7 @@ model Company {
   updatedAt            DateTime  @updatedAt
   rides                Ride[]
   invoices             Invoice[]
+  partyBookings        PartyBooking[]
 }
 
 model Ride {
@@ -429,4 +430,78 @@ model EmailTemplate {
   intro     String   @default("Please find your invoice for transportation services provided in {{month}} {{year}} attached to this email as a PDF.")
   closing   String   @default("Please remit payment by the due date indicated above. If you have any questions regarding this invoice, please don't hesitate to reach out.\n\nThank you for your business.")
   updatedAt DateTime @updatedAt
+}
+
+// ──────────────────────────────────────────────────────────────
+// Party Bookings — group/event transportation bookings
+// ──────────────────────────────────────────────────────────────
+
+enum PartyStatus {
+  BOOKED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model PartyBooking {
+  id              String      @id @default(cuid())
+  customerName    String
+  customerPhone   String      @default("")
+  customerEmail   String      @default("")
+  eventDate       DateTime
+  pickupTime      String      @default("")   // e.g. "14:00"
+  pickupLocation  String      @default("")
+  dropoffLocation String      @default("")
+  passengers      Int         @default(1)
+  vehiclesNeeded  Int         @default(1)
+  quotedAmount    Float       @default(0)
+  status          PartyStatus @default(BOOKED)
+  notes           String      @default("")
+  companyId       String?                    // optional link to a Company for invoicing
+  company         Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([eventDate])
+  @@index([status])
+}
+
+// ──────────────────────────────────────────────────────────────
+// Hallcon — predefined routes & trip logging
+// ──────────────────────────────────────────────────────────────
+
+model HallconRoute {
+  id              String        @id @default(cuid())
+  routeName       String        @unique       // e.g. "Timmins → Kapuskasing"
+  pickupLocation  String        @default("")
+  dropoffLocation String        @default("")
+  distanceKm      Float         @default(0)
+  driverPay       Float         @default(0)   // what we pay the driver per trip
+  billingAmount   Float         @default(0)   // what Hallcon pays us per trip
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  trips           HallconTrip[]
+}
+
+model HallconTrip {
+  id            String       @id @default(cuid())
+  routeId       String
+  route         HallconRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  date          DateTime
+  driver        String       @default("")
+  vehicleNumber String       @default("")
+  passengers    Int          @default(1)
+  driverPay     Float        @default(0)   // copied from route at time of logging (can override)
+  billingAmount Float        @default(0)   // copied from route at time of logging (can override)
+  notes         String       @default("")
+  month         Int
+  year          Int
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([routeId])
+  @@index([date])
+  @@index([month, year])
+  @@index([driver])
 }
