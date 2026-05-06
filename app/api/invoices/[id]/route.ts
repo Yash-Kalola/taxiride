@@ -12,6 +12,12 @@ const patchSchema = z.object({
   total:         z.number().optional(),
   dateSent:      z.string().optional(),
   dueDate:       z.string().optional(),
+  // Allow correcting an invoice's billing period (e.g. invoice was generated
+  // for the wrong month — this lets the office fix it without deleting +
+  // re-generating). Only the Invoice label changes; rides keep their own
+  // month/year unless edited separately on the rides page.
+  month:         z.string().optional(),
+  year:          z.coerce.number().int().optional(),
   paymentMethod: z.enum(['DEBIT', 'CREDIT', 'E_TRANSFER', 'CHEQUE', 'CASH', 'OTHER']).optional(),
   paymentRef:    z.string().optional(),
 });

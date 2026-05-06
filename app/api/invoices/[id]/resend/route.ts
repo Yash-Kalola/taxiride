@@ -31,7 +31,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         month:         invoice.month,
         year:          invoice.year,
         total:         invoice.total,
-        dueDate:       invoice.dueDate ?? undefined,
+        // dueDate is stored as string ('' when missing). Pass only when set.
+        dueDate:       invoice.dueDate || undefined,
         companyName:   invoice.company.companyName,
         pdfBuffer,
       });
@@ -40,7 +41,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       emailError = typeof err?.message === 'string' ? err.message : 'Failed to send email';
     }
 
-    return NextResponse.json({ success: true, emailError });
+    // Return the full invoice so the client can refresh state, matching the
+    // shape returned by /send.
+    return NextResponse.json({ success: true, emailError, invoice });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

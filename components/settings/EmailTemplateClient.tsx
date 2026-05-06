@@ -28,15 +28,20 @@ export default function EmailTemplateClient({
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error,   setError]   = useState<string | null>(null);
 
+  // Track the last-saved snapshot so the pristine check stays accurate after
+  // saving (mutating the `initial` prop doesn't trigger React re-renders, so
+  // we keep our own copy that we update on save).
+  const [saved, setSaved] = useState<Template>(initial);
+
   const [previewHtml,    setPreviewHtml]    = useState<string>('');
   const [previewSubject, setPreviewSubject] = useState<string>('');
 
   const current = useMemo(() => ({ subject, intro, closing }), [subject, intro, closing]);
   const pristine = useMemo(() =>
-    current.subject === initial.subject &&
-    current.intro   === initial.intro &&
-    current.closing === initial.closing,
-    [current, initial],
+    current.subject === saved.subject &&
+    current.intro   === saved.intro &&
+    current.closing === saved.closing,
+    [current, saved],
   );
 
   // Debounced live preview — fetch the rendered HTML from the server so the
@@ -67,14 +72,26 @@ export default function EmailTemplateClient({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(current),
       });
+      const contentType = res.headers.get('content-type') || '';
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        setError(data?.error ? 'Please check the fields above.' : 'Save failed. Try again.');
+        if (contentType.includes('application/json')) {
+          const data = await res.json().catch(() => null);
+          // Surface field-level zod errors when present
+          if (data?.error?.fieldErrors) {
+            const fieldMsgs = Object.entries(data.error.fieldErrors)
+              .map(([field, msgs]) => `${field}: ${(msgs as string[]).join(', ')}`).join(' · ');
+            setError(`Validation failed — ${fieldMsgs}`);
+          } else {
+            setError(typeof data?.error === 'string' ? data.error : 'Save failed. Try again.');
+          }
+        } else {
+          setError(`Server error (${res.status}) — check that the database is configured correctly.`);
+        }
       } else {
-        const saved = await res.json();
-        initial.subject = saved.subject;
-        initial.intro   = saved.intro;
-        initial.closing = saved.closing;
+        const savedRow = await res.json();
+        // Update our internal "saved" snapshot so the pristine check works on
+        // subsequent edits without needing to reload the page.
+        setSaved({ subject: savedRow.subject, intro: savedRow.intro, closing: savedRow.closing });
         setSavedAt(new Date());
       }
     } catch {

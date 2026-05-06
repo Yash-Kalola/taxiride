@@ -8,6 +8,7 @@ import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import SendInvoiceModal from '@/components/email/SendInvoiceModal';
 import { formatCurrency } from '@/lib/tax';
+import { MONTHS, YEARS } from '@/lib/constants';
 
 interface Company { companyName: string; address: string; poNumber: string; email: string; }
 interface Ride { id: string; dateTime: string; pickupLocation: string; dropoffLocation: string; vehicleNumber: string; amount: number; voided: boolean; }
@@ -46,6 +47,12 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
   const [payRef, setPayRef]             = useState('');
   const [showSendModal,   setShowSendModal]   = useState(false);
   const [showResendModal, setShowResendModal] = useState(false);
+  const [showAddRidesModal, setShowAddRidesModal] = useState(false);
+  const [availableRides,    setAvailableRides]    = useState<Ride[]>([]);
+  const [selectedRideIds,   setSelectedRideIds]   = useState<Set<string>>(new Set());
+  const [loadingAvailable,  setLoadingAvailable]  = useState(false);
+  const [attaching,         setAttaching]         = useState(false);
+  const [deletingRideId,    setDeletingRideId]    = useState<string | null>(null);
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -72,6 +79,25 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
       setMsg({ type: 'err', text: 'Failed to save dates.' });
     }
     setSavingDates(false);
+  }
+
+  async function savePeriod(newMonth: string, newYear: number) {
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: newMonth, year: newYear }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setInvoice((prev) => ({ ...prev, month: updated.month, year: updated.year }));
+        setMsg({ type: 'ok', text: `Invoice period updated to ${newMonth} ${newYear}.` });
+      } else {
+        setMsg({ type: 'err', text: 'Failed to update invoice period.' });
+      }
+    } catch {
+      setMsg({ type: 'err', text: 'Network error.' });
+    }
   }
 
   function handleSent(data: { emailError?: string | null; invoice?: any }) {
@@ -146,6 +172,93 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
     finally { setVoidingId(null); }
   }
 
+  // Permanently delete a ride. The ride DELETE endpoint already recomputes
+  // invoice totals on the server, so we just need to refresh the local state.
+  async function deleteRide(rideId: string) {
+    if (!confirm('Permanently delete this ride? This cannot be undone.')) return;
+    setDeletingRideId(rideId);
+    try {
+      const res = await fetch(`/api/rides/${rideId}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        // Refresh invoice to pick up the new totals
+        const refreshed = await fetch(`/api/invoices/${invoice.id}`).then(r => r.ok ? r.json() : null);
+        if (refreshed) {
+          setInvoice((prev) => ({ ...prev, amountPreTax: refreshed.amountPreTax, hst: refreshed.hst, total: refreshed.total }));
+        }
+        setRides((prev) => prev.filter(r => r.id !== rideId));
+        setMsg({ type: 'ok', text: 'Ride deleted.' });
+      } else {
+        const data = await res.json().catch(() => null);
+        setMsg({ type: 'err', text: data?.error ?? 'Failed to delete ride.' });
+      }
+    } catch {
+      setMsg({ type: 'err', text: 'Network error.' });
+    } finally {
+      setDeletingRideId(null);
+    }
+  }
+
+  // Open the "Add Rides" modal: fetch unbilled rides for this company
+  async function openAddRidesModal() {
+    setShowAddRidesModal(true);
+    setSelectedRideIds(new Set());
+    setLoadingAvailable(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/rides`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableRides(data.rides ?? []);
+      } else {
+        setAvailableRides([]);
+        setMsg({ type: 'err', text: 'Failed to load available rides.' });
+      }
+    } catch {
+      setAvailableRides([]);
+      setMsg({ type: 'err', text: 'Network error.' });
+    } finally {
+      setLoadingAvailable(false);
+    }
+  }
+
+  function toggleRideSelection(id: string) {
+    setSelectedRideIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function attachSelectedRides() {
+    if (selectedRideIds.size === 0) return;
+    setAttaching(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/rides`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ rideIds: Array.from(selectedRideIds) }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.invoice) {
+        setInvoice((prev) => ({
+          ...prev,
+          amountPreTax: data.invoice.amountPreTax,
+          hst:          data.invoice.hst,
+          total:        data.invoice.total,
+        }));
+        setRides(data.invoice.rides ?? []);
+        setMsg({ type: 'ok', text: `${data.attached} ride${data.attached === 1 ? '' : 's'} added to invoice.` });
+        setShowAddRidesModal(false);
+      } else {
+        setMsg({ type: 'err', text: data?.error ?? 'Failed to attach rides.' });
+      }
+    } catch {
+      setMsg({ type: 'err', text: 'Network error.' });
+    } finally {
+      setAttaching(false);
+    }
+  }
+
   const voidedCount  = rides.filter((r) => r.voided).length;
   const activeRides  = rides.filter((r) => !r.voided);
 
@@ -160,7 +273,23 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
             <Link href="/invoices" className="text-sm text-gray-400 hover:text-gray-600">← Invoices</Link>
           </div>
           <h1 className="mt-2 text-2xl font-bold text-gray-900">Invoice #{invoice.invoiceNumber}</h1>
-          <p className="mt-1 text-sm text-gray-500">{invoice.company.companyName} · {invoice.month} {invoice.year}</p>
+          <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
+            <span>{invoice.company.companyName} ·</span>
+            <select
+              value={invoice.month}
+              onChange={(e) => savePeriod(e.target.value, invoice.year)}
+              className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select
+              value={invoice.year}
+              onChange={(e) => savePeriod(invoice.month, parseInt(e.target.value))}
+              className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -313,6 +442,7 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
                 </span>
               )}
             </div>
+            <Button size="sm" variant="secondary" onClick={openAddRidesModal}>+ Add Rides</Button>
           </div>
           <table className="w-full">
             <thead>
@@ -334,17 +464,27 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
                     {formatCurrency(r.amount)}
                   </td>
                   <td className="px-5 py-3">
-                    <button
-                      onClick={() => voidRide(r.id)}
-                      disabled={voidingId === r.id}
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium px-2 py-1 rounded-md ${
-                        r.voided
-                          ? 'text-emerald-600 hover:bg-emerald-50 border border-emerald-200'
-                          : 'text-red-600 hover:bg-red-50 border border-red-200'
-                      } disabled:opacity-40`}
-                    >
-                      {voidingId === r.id ? '…' : r.voided ? 'Unvoid' : 'Void'}
-                    </button>
+                    <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => voidRide(r.id)}
+                        disabled={voidingId === r.id}
+                        className={`text-xs font-medium px-2 py-1 rounded-md ${
+                          r.voided
+                            ? 'text-emerald-600 hover:bg-emerald-50 border border-emerald-200'
+                            : 'text-amber-600 hover:bg-amber-50 border border-amber-200'
+                        } disabled:opacity-40`}
+                      >
+                        {voidingId === r.id ? '…' : r.voided ? 'Unvoid' : 'Void'}
+                      </button>
+                      <button
+                        onClick={() => deleteRide(r.id)}
+                        disabled={deletingRideId === r.id}
+                        className="text-xs font-medium px-2 py-1 rounded-md text-red-600 hover:bg-red-50 border border-red-200 disabled:opacity-40"
+                        title="Permanently delete this ride"
+                      >
+                        {deletingRideId === r.id ? '…' : 'Delete'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -421,6 +561,81 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
         onClose={() => setShowResendModal(false)}
         onSent={handleResent}
       />
+
+      {/* Add Rides Modal — shows unbilled rides for this company */}
+      <Modal open={showAddRidesModal} onClose={() => setShowAddRidesModal(false)} title="Add Rides to Invoice" size="lg">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Select unbilled rides for <strong>{invoice.company.companyName}</strong> to add to this invoice.
+          </p>
+
+          {loadingAvailable ? (
+            <p className="text-sm text-gray-400 py-8 text-center">Loading rides…</p>
+          ) : availableRides.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 py-12 text-center">
+              <p className="text-sm font-medium text-gray-500">No unbilled rides available</p>
+              <p className="mt-1 text-xs text-gray-400">All rides for this company are already on an invoice.</p>
+            </div>
+          ) : (
+            <>
+              <div className="max-h-[400px] overflow-y-auto rounded-xl border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 w-8"></th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Date</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Pickup → Dropoff</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Cab</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-gray-400">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {availableRides.map((r: any) => {
+                      const isOtherPeriod = r.month !== invoice.month || r.year !== invoice.year;
+                      return (
+                        <tr key={r.id} className={`cursor-pointer hover:bg-indigo-50/40 ${selectedRideIds.has(r.id) ? 'bg-indigo-50' : ''}`} onClick={() => toggleRideSelection(r.id)}>
+                          <td className="px-3 py-2">
+                            <input type="checkbox" checked={selectedRideIds.has(r.id)} onChange={() => toggleRideSelection(r.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">
+                            {r.dateTime || '—'}
+                            {isOtherPeriod && (
+                              <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">
+                                {r.month} {r.year}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600 max-w-[260px] truncate">
+                            {(r.pickupLocation || '—') + ' → ' + (r.dropoffLocation || '—')}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-gray-600">{r.vehicleNumber || '—'}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-gray-900">{formatCurrency(r.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-500">
+                  {selectedRideIds.size} of {availableRides.length} selected
+                </span>
+                <span className="font-medium text-gray-900">
+                  Subtotal: {formatCurrency(availableRides.filter((r: any) => selectedRideIds.has(r.id)).reduce((s, r: any) => s + r.amount, 0))}
+                </span>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+            <Button variant="ghost" onClick={() => setShowAddRidesModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={attachSelectedRides} disabled={attaching || selectedRideIds.size === 0}>
+              {attaching ? 'Adding…' : `Add ${selectedRideIds.size > 0 ? selectedRideIds.size + ' ' : ''}Ride${selectedRideIds.size === 1 ? '' : 's'}`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
