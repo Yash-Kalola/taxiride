@@ -68,7 +68,7 @@ export default function EmailTemplateClient({
     setSaving(true); setError(null);
     try {
       const res = await fetch('/api/settings/email', {
-        method:  'PUT',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(current),
       });
@@ -82,10 +82,11 @@ export default function EmailTemplateClient({
               .map(([field, msgs]) => `${field}: ${(msgs as string[]).join(', ')}`).join(' · ');
             setError(`Validation failed — ${fieldMsgs}`);
           } else {
-            setError(typeof data?.error === 'string' ? data.error : 'Save failed. Try again.');
+            setError(typeof data?.error === 'string' ? data.error : `Save failed (${res.status}). Try again.`);
           }
         } else {
-          setError(`Server error (${res.status}) — check that the database is configured correctly.`);
+          // Non-JSON error means a routing or server-level issue (not Zod validation).
+          setError(`Server error (${res.status}). The deploy may still be in progress — wait a minute and try again.`);
         }
       } else {
         const savedRow = await res.json();

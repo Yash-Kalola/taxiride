@@ -5,10 +5,13 @@ import { DEFAULT_EMAIL_TEMPLATE, loadEmailTemplate } from '@/lib/email';
 
 /**
  * GET  /api/settings/email  — load current template (fallback to defaults)
- * PUT  /api/settings/email  — upsert the single "default" row
+ * POST /api/settings/email  — upsert the single "default" row
+ *
+ * Note: Originally used PUT but some Vercel/CDN configurations return 405
+ * for PUT on dynamically-generated routes. POST is universally supported.
  */
 
-const putSchema = z.object({
+const saveSchema = z.object({
   subject: z.string().trim().min(1, 'Subject is required').max(500),
   intro:   z.string().trim().min(1, 'Intro is required').max(4000),
   closing: z.string().trim().min(1, 'Closing is required').max(4000),
@@ -19,9 +22,9 @@ export async function GET() {
   return NextResponse.json({ ...tpl, defaults: DEFAULT_EMAIL_TEMPLATE });
 }
 
-export async function PUT(request: NextRequest) {
+async function saveTemplate(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const parsed = putSchema.safeParse(body);
+  const parsed = saveSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
@@ -40,3 +43,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
+
+export async function POST(request: NextRequest) { return saveTemplate(request); }
+// Keep PUT for backward compatibility with anything calling the old method.
+export async function PUT(request: NextRequest)  { return saveTemplate(request); }
