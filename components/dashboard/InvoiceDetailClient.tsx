@@ -7,6 +7,7 @@ import Badge from '@/components/ui/Badge';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import SendInvoiceModal from '@/components/email/SendInvoiceModal';
+import EmailErrorBanner from '@/components/email/EmailErrorBanner';
 import { formatCurrency } from '@/lib/tax';
 import { MONTHS, YEARS } from '@/lib/constants';
 
@@ -42,6 +43,9 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
   const [deleting,  setDeleting]  = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [msg,       setMsg]       = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+  // Separate state for email-send failures so we can render the rich
+  // EmailErrorBanner (with friendly cause + action) instead of a flat string.
+  const [emailErr,  setEmailErr]  = useState<{ raw: string; prefix?: string } | null>(null);
   const [showPayModal, setShowPayModal] = useState(false);
   const [payMethod, setPayMethod]       = useState('');
   const [payRef, setPayRef]             = useState('');
@@ -106,16 +110,24 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
       setDateSent(data.invoice.dateSent ?? '');
       setDueDate(data.invoice.dueDate  ?? '');
     }
-    setMsg(data?.emailError
-      ? { type: 'warn', text: `Invoice marked as sent. Email could not be delivered: ${data.emailError}` }
-      : { type: 'ok',   text: 'Invoice sent and emailed successfully.' });
+    if (data?.emailError) {
+      setMsg(null);
+      setEmailErr({ raw: data.emailError, prefix: 'Invoice marked as sent, but the email could not be delivered.' });
+    } else {
+      setEmailErr(null);
+      setMsg({ type: 'ok', text: 'Invoice sent and emailed successfully.' });
+    }
     setShowSendModal(false);
   }
 
   function handleResent(data: { emailError?: string | null }) {
-    setMsg(data?.emailError
-      ? { type: 'warn', text: `Email could not be delivered: ${data.emailError}` }
-      : { type: 'ok',   text: 'Invoice re-sent successfully.' });
+    if (data?.emailError) {
+      setMsg(null);
+      setEmailErr({ raw: data.emailError });
+    } else {
+      setEmailErr(null);
+      setMsg({ type: 'ok', text: 'Invoice re-sent successfully.' });
+    }
     setShowResendModal(false);
   }
 
@@ -347,6 +359,13 @@ export default function InvoiceDetailClient({ invoice: initial }: { invoice: Inv
       }`}>
           {msg.text}
         </div>
+      )}
+
+      {emailErr && (
+        <EmailErrorBanner
+          rawError={emailErr.raw}
+          prefix={emailErr.prefix}
+        />
       )}
 
       {/* Detail cards */}
