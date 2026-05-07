@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { DEFAULT_EMAIL_TEMPLATE } from '@/lib/email';
 import EmailTemplateClient from '@/components/settings/EmailTemplateClient';
+import SmtpTestClient from '@/components/settings/SmtpTestClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export default async function EmailTemplateSettingsPage() {
   return (
     <div className="px-8 py-8 space-y-6">
       <EmailTemplateClient initial={initial} defaults={DEFAULT_EMAIL_TEMPLATE} />
+      <SmtpTestClient />
     </div>
   );
 }
