@@ -18,7 +18,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const err = validateUpload(file);
     if (err) return NextResponse.json({ error: err.message }, { status: err.status });
 
-    const { relPath } = await saveUpload(file!, 'company-expenses', params.id);
+    const { relPath, bytes } = await saveUpload(file!, 'company-expenses', params.id);
 
     const attachment = await prisma.companyExpenseAttachment.create({
       data: {
@@ -28,7 +28,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         filePath:  relPath,
         fileType:  file!.type,
         fileSize:  file!.size,
+        fileData:  bytes,
       },
+      select: { id: true, expenseId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
     });
 
     return NextResponse.json(attachment, { status: 201 });

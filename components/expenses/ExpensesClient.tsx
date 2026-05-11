@@ -435,7 +435,7 @@ export default function ExpensesClient({ initialExpenses, brokers, initialBroker
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0 ml-3">
-                    <a href={a.filePath} target="_blank" rel="noopener noreferrer"
+                    <a href={`/api/expenses/attachments/${a.id}/download`} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-indigo-600 hover:underline font-medium">Download</a>
                     <button onClick={() => deleteAttachment(attExpense.id, a.id)}
                       className="text-xs text-red-500 hover:text-red-700">Delete</button>

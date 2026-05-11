@@ -4,10 +4,12 @@ import { prisma } from '@/lib/db';
 
 const createSchema = z.object({
   routeId:       z.string().min(1, 'Route is required'),
+  tripNumber:    z.string().default(''),
   date:          z.string().min(1, 'Date is required'),
   driver:        z.string().default(''),
   vehicleNumber: z.string().default(''),
   passengers:    z.coerce.number().int().min(1).default(1),
+  duration:      z.string().default(''),
   driverPay:     z.coerce.number().min(0).default(0),
   billingAmount: z.coerce.number().min(0).default(0),
   notes:         z.string().default(''),

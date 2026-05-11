@@ -53,26 +53,38 @@ export function validateUpload(file: File | null): UploadError | null {
 }
 
 /**
- * Persist an uploaded File under `public/uploads/{subdir}/{ownerId}/` using a
- * UUID filename. Returns the public-relative path to store in the database.
+ * Process an uploaded File and return the bytes + a relative path. Always
+ * returns the file content as a Buffer so callers can store it in the
+ * database (Bytes field). On non-serverless environments (i.e. when the
+ * filesystem is writable) it ALSO writes the file to
+ * `public/uploads/{subdir}/{ownerId}/` and returns that path. On Vercel
+ * (read-only FS at runtime) the disk write is skipped — the relPath
+ * still points to the API download endpoint, but the bytes are what
+ * actually gets served.
  */
 export async function saveUpload(
   file: File,
   subdir: string,
   ownerId: string,
-): Promise<{ relPath: string }> {
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads', subdir, ownerId);
-  fs.mkdirSync(uploadDir, { recursive: true });
+): Promise<{ relPath: string; bytes: Buffer }> {
+  const bytes = Buffer.from(await file.arrayBuffer());
 
-  // Prefer the whitelisted extension derived from mime type; fall back to the
-  // original filename's extension only if we trust it's sane.
   const extFromMime = MIME_EXT[file.type];
   const extFromName = path.extname(file.name).toLowerCase();
   const ext         = extFromMime || (/^\.[a-z0-9]{1,8}$/.test(extFromName) ? extFromName : '');
+  const safeName    = `${randomUUID()}${ext}`;
 
-  const safeName = `${randomUUID()}${ext}`;
-  const fullPath = path.join(uploadDir, safeName);
-  fs.writeFileSync(fullPath, Buffer.from(await file.arrayBuffer()));
+  // Try to also persist to disk (works in dev / non-serverless deploys).
+  // Failures are non-fatal — the bytes in the DB are the source of truth.
+  try {
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads', subdir, ownerId);
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const fullPath = path.join(uploadDir, safeName);
+    fs.writeFileSync(fullPath, bytes);
+  } catch (err) {
+    // Read-only FS (e.g. Vercel) — that's fine, bytes are stored in DB.
+    console.log('[uploads] disk write skipped (likely read-only FS):', (err as Error)?.message);
+  }
 
-  return { relPath: `/uploads/${subdir}/${ownerId}/${safeName}` };
+  return { relPath: `/uploads/${subdir}/${ownerId}/${safeName}`, bytes };
 }

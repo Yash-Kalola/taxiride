@@ -13,7 +13,13 @@ export default async function CompanyExpensesPage() {
       prisma.companyExpense.findMany({
         where:   { month: today.getMonth() + 1, year: today.getFullYear() },
         orderBy: { date: 'desc' },
-        include: { attachments: { orderBy: { createdAt: 'desc' } } },
+        // Explicit select on attachments to exclude `fileData` Bytes column
+        include: {
+          attachments: {
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, expenseId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
+          },
+        },
       }),
       prisma.brokerVehicle.findMany({
         where: { isCompanyCar: true, isActive: true },

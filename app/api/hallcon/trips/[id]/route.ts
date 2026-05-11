@@ -4,10 +4,12 @@ import { prisma } from '@/lib/db';
 
 const updateSchema = z.object({
   routeId:       z.string().optional(),
+  tripNumber:    z.string().optional(),
   date:          z.string().optional(),
   driver:        z.string().optional(),
   vehicleNumber: z.string().optional(),
   passengers:    z.coerce.number().int().min(1).optional(),
+  duration:      z.string().optional(),
   driverPay:     z.coerce.number().min(0).optional(),
   billingAmount: z.coerce.number().min(0).optional(),
   notes:         z.string().optional(),

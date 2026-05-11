@@ -24,10 +24,12 @@ interface HallconTrip {
   id: string;
   routeId: string;
   route: { id: string; routeName: string; pickupLocation: string; dropoffLocation: string };
+  tripNumber: string;
   date: string;
   driver: string;
   vehicleNumber: string;
   passengers: number;
+  duration: string;
   driverPay: number;
   billingAmount: number;
   notes: string;
@@ -36,7 +38,7 @@ interface HallconTrip {
 }
 
 const EMPTY_ROUTE = { routeName: '', pickupLocation: '', dropoffLocation: '', distanceKm: 0, driverPay: 0, billingAmount: 0 };
-const EMPTY_TRIP  = { routeId: '', date: '', driver: '', vehicleNumber: '', passengers: 1, driverPay: 0, billingAmount: 0, notes: '' };
+const EMPTY_TRIP  = { routeId: '', tripNumber: '', date: '', driver: '', vehicleNumber: '', passengers: 1, duration: '', driverPay: 0, billingAmount: 0, notes: '' };
 
 export default function HallconClient({
   initialRoutes,
@@ -47,7 +49,7 @@ export default function HallconClient({
 }) {
   const [routes, setRoutes]     = useState<HallconRoute[]>(initialRoutes);
   const [trips, setTrips]       = useState<HallconTrip[]>(initialTrips);
-  const [tab, setTab]           = useState<'trips' | 'routes'>('trips');
+  const [tab, setTab]           = useState<'trips' | 'routes' | 'drivers'>('trips');
 
   // Route modal
   const [routeModal, setRouteModal]   = useState<'add' | 'edit' | null>(null);
@@ -81,6 +83,22 @@ export default function HallconClient({
   const totalDriverPay = filteredTrips.reduce((s, t) => s + t.driverPay, 0);
   const profit = totalBilling - totalDriverPay;
 
+  // Per-driver pay summary for the selected period (Yash: "driver pay
+  // option somewhere just only for hallcon page"). Aggregates driver pay,
+  // trip count, and total billing per driver.
+  const driverPaySummary = useMemo(() => {
+    const map = new Map<string, { driver: string; trips: number; pay: number; billing: number }>();
+    for (const t of filteredTrips) {
+      const key = (t.driver || '— Unassigned —').trim();
+      const cur = map.get(key) ?? { driver: key, trips: 0, pay: 0, billing: 0 };
+      cur.trips   += 1;
+      cur.pay     += t.driverPay;
+      cur.billing += t.billingAmount;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.pay - a.pay);
+  }, [filteredTrips]);
+
   // --- Route CRUD ---
   function openAddRoute() { setRouteForm(EMPTY_ROUTE); setEditingRoute(null); setRouteError(''); setRouteModal('add'); }
   function openEditRoute(r: HallconRoute) {
@@ -110,8 +128,10 @@ export default function HallconClient({
   }
   function openEditTrip(t: HallconTrip) {
     setTripForm({
-      routeId: t.routeId, date: format(new Date(t.date), 'yyyy-MM-dd'),
+      routeId: t.routeId, tripNumber: t.tripNumber ?? '',
+      date: format(new Date(t.date), 'yyyy-MM-dd'),
       driver: t.driver, vehicleNumber: t.vehicleNumber, passengers: t.passengers,
+      duration: t.duration ?? '',
       driverPay: t.driverPay, billingAmount: t.billingAmount, notes: t.notes,
     });
     setEditingTrip(t); setTripError(''); setTripModal('edit');
@@ -177,6 +197,9 @@ export default function HallconClient({
         <button onClick={() => setTab('trips')} className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === 'trips' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
           Trips
         </button>
+        <button onClick={() => setTab('drivers')} className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === 'drivers' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+          Driver Pay
+        </button>
         <button onClick={() => setTab('routes')} className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === 'routes' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
           Routes
         </button>
@@ -209,7 +232,7 @@ export default function HallconClient({
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    {['Date', 'Route', 'Driver', 'Cab #', 'Pax', 'Driver Pay', 'Billing', 'Profit', ''].map(h => (
+                    {['Date', 'Trip #', 'Route', 'Driver', 'Cab #', 'Pax', 'Duration', 'Driver Pay', 'Billing', 'Profit', ''].map(h => (
                       <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                     ))}
                   </tr>
@@ -220,10 +243,12 @@ export default function HallconClient({
                     return (
                       <tr key={t.id} className="group hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3.5 text-sm text-gray-700">{format(new Date(t.date), 'MMM d')}</td>
+                        <td className="px-4 py-3.5 text-sm font-mono text-gray-700">{t.tripNumber || '—'}</td>
                         <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{t.route.routeName}</td>
                         <td className="px-4 py-3.5 text-sm text-gray-600">{t.driver || '—'}</td>
                         <td className="px-4 py-3.5 text-sm text-gray-600">{t.vehicleNumber || '—'}</td>
                         <td className="px-4 py-3.5 text-sm text-gray-600">{t.passengers}</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-600">{t.duration || '—'}</td>
                         <td className="px-4 py-3.5 text-sm font-medium text-red-600">${t.driverPay.toFixed(2)}</td>
                         <td className="px-4 py-3.5 text-sm font-medium text-gray-900">${t.billingAmount.toFixed(2)}</td>
                         <td className="px-4 py-3.5 text-sm font-bold">
@@ -241,13 +266,74 @@ export default function HallconClient({
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 bg-gray-50">
-                    <td colSpan={5} className="px-4 py-3.5 text-xs font-bold uppercase text-gray-500">Totals</td>
+                    <td colSpan={7} className="px-4 py-3.5 text-xs font-bold uppercase text-gray-500">Totals</td>
                     <td className="px-4 py-3.5 text-sm font-bold text-red-600">${totalDriverPay.toFixed(2)}</td>
                     <td className="px-4 py-3.5 text-sm font-bold text-gray-900">${totalBilling.toFixed(2)}</td>
                     <td className="px-4 py-3.5 text-sm font-bold">
                       <span className={profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>${profit.toFixed(2)}</span>
                     </td>
                     <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'drivers' && (
+        <>
+          {/* Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <Select value={filterMonth} onChange={e => setFilterMonth(parseInt(e.target.value))} className="w-32">
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </Select>
+            <Select value={filterYear} onChange={e => setFilterYear(parseInt(e.target.value))} className="w-24">
+              {[2023, 2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+            </Select>
+            <p className="text-sm text-gray-400 ml-2">Driver pay totals for {MONTHS[filterMonth - 1]} {filterYear}</p>
+          </div>
+
+          {driverPaySummary.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white py-16 text-center">
+              <p className="text-sm font-medium text-gray-500">No driver pay to show for {MONTHS[filterMonth - 1]} {filterYear}</p>
+              <p className="mt-1 text-xs text-gray-400">Log Hallcon trips to see per-driver pay totals here.</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    {['Driver', 'Trips', 'Total Driver Pay', 'Total Billing', 'Profit Contribution'].map(h => (
+                      <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {driverPaySummary.map(d => {
+                    const profit = d.billing - d.pay;
+                    return (
+                      <tr key={d.driver} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-5 py-4 text-sm font-semibold text-gray-900">{d.driver}</td>
+                        <td className="px-5 py-4 text-sm text-gray-600">{d.trips}</td>
+                        <td className="px-5 py-4 text-sm font-bold text-red-600">${d.pay.toFixed(2)}</td>
+                        <td className="px-5 py-4 text-sm text-gray-700">${d.billing.toFixed(2)}</td>
+                        <td className="px-5 py-4 text-sm font-bold">
+                          <span className={profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>${profit.toFixed(2)}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 bg-gray-50">
+                    <td className="px-5 py-3.5 text-xs font-bold uppercase text-gray-500">Totals</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-gray-700">{driverPaySummary.reduce((s, d) => s + d.trips, 0)}</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-red-600">${totalDriverPay.toFixed(2)}</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-gray-900">${totalBilling.toFixed(2)}</td>
+                    <td className="px-5 py-3.5 text-sm font-bold">
+                      <span className={profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>${profit.toFixed(2)}</span>
+                    </td>
                   </tr>
                 </tfoot>
               </table>
@@ -340,12 +426,16 @@ export default function HallconClient({
             )}
           </div>
           <div className="grid grid-cols-2 gap-4">
+            <Input label="Trip #" placeholder="T-100" value={tripForm.tripNumber} onChange={e => setTripForm(f => ({ ...f, tripNumber: e.target.value }))} />
             <Input label="Date" type="date" value={tripForm.date} onChange={e => setTripForm(f => ({ ...f, date: e.target.value }))} />
-            <Input label="Passengers" type="number" min={1} value={String(tripForm.passengers)} onChange={e => setTripForm(f => ({ ...f, passengers: parseInt(e.target.value) || 1 }))} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Driver" placeholder="Driver name" value={tripForm.driver} onChange={e => setTripForm(f => ({ ...f, driver: e.target.value }))} />
             <Input label="Cab #" placeholder="30" value={tripForm.vehicleNumber} onChange={e => setTripForm(f => ({ ...f, vehicleNumber: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Passengers" type="number" min={1} value={String(tripForm.passengers)} onChange={e => setTripForm(f => ({ ...f, passengers: parseInt(e.target.value) || 1 }))} />
+            <Input label="Duration" placeholder="3 hours" hint="Free text — e.g. '3 hours' or '4h 30m'" value={tripForm.duration} onChange={e => setTripForm(f => ({ ...f, duration: e.target.value }))} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Driver Pay ($)" type="number" min={0} step="0.01" value={String(tripForm.driverPay)} onChange={e => setTripForm(f => ({ ...f, driverPay: parseFloat(e.target.value) || 0 }))} />

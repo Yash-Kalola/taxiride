@@ -12,7 +12,14 @@ export default async function ExpensesPage({ searchParams }: { searchParams: { b
     [expenses, brokers] = await Promise.all([
       prisma.brokerExpense.findMany({
         orderBy: { date: 'desc' },
-        include: { broker: { select: { id: true, name: true } }, attachments: { orderBy: { createdAt: 'desc' } } },
+        include: {
+          broker: { select: { id: true, name: true } },
+          // Explicit select to exclude `fileData` Bytes column (would bloat the response on every page load)
+          attachments: {
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, expenseId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
+          },
+        },
       }),
       prisma.broker.findMany({
         where:   { isActive: true },

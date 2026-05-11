@@ -437,7 +437,7 @@ export default function VehiclesClient({
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0 ml-4">
-                                    <a href={d.filePath} target="_blank" rel="noopener noreferrer"
+                                    <a href={`/api/vehicles/documents/${d.id}/download`} target="_blank" rel="noopener noreferrer"
                                       className="text-xs text-indigo-600 hover:underline font-medium">Download</a>
                                     <Button size="sm" variant="ghost" onClick={() => deleteDoc(v, d.id)}
                                       className="text-xs text-red-500 hover:bg-red-50">Delete</Button>

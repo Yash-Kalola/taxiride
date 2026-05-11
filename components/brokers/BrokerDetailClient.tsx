@@ -1412,7 +1412,7 @@ export default function BrokerDetailClient({ broker: initial }: { broker: Broker
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 ml-3">
-                    <a href={a.filePath} target="_blank" rel="noopener noreferrer"
+                    <a href={`/api/brokers/transactions/attachments/${a.id}/download`} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-indigo-600 hover:underline font-medium">View</a>
                     <button onClick={() => deleteAttachment(a.id)}
                       className="text-xs text-red-500 hover:text-red-700">Delete</button>

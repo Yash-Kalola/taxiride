@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const tx = await prisma.brokerTransaction.findUnique({ where: { id: params.id } });
     if (!tx) return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
 
-    const { relPath } = await saveUpload(file!, 'transactions', params.id);
+    const { relPath, bytes } = await saveUpload(file!, 'transactions', params.id);
 
     const attachment = await prisma.transactionAttachment.create({
       data: {
@@ -25,7 +25,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         filePath:  relPath,
         fileType:  file!.type,
         fileSize:  file!.size,
+        fileData:  bytes,
       },
+      select: { id: true, transactionId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
     });
 
     return NextResponse.json(attachment, { status: 201 });
@@ -40,6 +42,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const attachments = await prisma.transactionAttachment.findMany({
       where: { transactionId: params.id },
       orderBy: { createdAt: 'desc' },
+      select: { id: true, transactionId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
     });
     return NextResponse.json(attachments);
   } catch (err) {

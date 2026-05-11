@@ -196,7 +196,7 @@ export default function MonthlyOverview({
                       return (
                         <td
                           key={m}
-                          className={`px-4 py-3.5 text-center transition-colors relative ${
+                          className={`px-4 py-3.5 text-center transition-colors relative group/td ${
                             isFlagged ? 'bg-red-50' : ''
                           }`}
                         >
@@ -232,6 +232,15 @@ export default function MonthlyOverview({
                                 draft
                               </span>
                             )}
+                          </button>
+                          {/* Direct PDF download — appears on hover so the
+                              PDF is one click away without opening the menu. */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); window.open(`/api/invoices/${inv.id}/pdf`, '_blank'); }}
+                            title={`Download PDF for Invoice #${inv.invoiceNumber}`}
+                            className="absolute top-1 right-1 opacity-0 group-hover/td:opacity-100 transition-opacity rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50 z-[1]"
+                          >
+                            PDF
                           </button>
                         </td>
                       );

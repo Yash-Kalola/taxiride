@@ -7,6 +7,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const docs = await prisma.vehicleDocument.findMany({
       where: { vehicleId: params.id },
       orderBy: { createdAt: 'desc' },
+      // Exclude fileData — those bytes can be megabytes per row
+      select: { id: true, vehicleId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
     });
     return NextResponse.json(docs);
   } catch (err) {
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const err = validateUpload(file);
     if (err) return NextResponse.json({ error: err.message }, { status: err.status });
 
-    const { relPath } = await saveUpload(file!, 'vehicles', params.id);
+    const { relPath, bytes } = await saveUpload(file!, 'vehicles', params.id);
 
     const doc = await prisma.vehicleDocument.create({
       data: {
@@ -37,7 +39,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         filePath: relPath,
         fileType: file!.type,
         fileSize: file!.size,
+        fileData: bytes,
       },
+      select: { id: true, vehicleId: true, label: true, fileName: true, filePath: true, fileType: true, fileSize: true, createdAt: true },
     });
 
     return NextResponse.json(doc, { status: 201 });
