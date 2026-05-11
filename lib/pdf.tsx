@@ -329,3 +329,198 @@ function InvoiceDoc({ company, rides, invoice }: { company: Company; rides: Ride
 export async function renderInvoicePDF(company: Company, rides: Ride[], invoice: Invoice): Promise<Buffer> {
   return renderToBuffer(<InvoiceDoc company={company} rides={rides} invoice={invoice} />) as Promise<Buffer>;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Overview PDF — full year-at-a-glance grid (Company × Month) used on the
+// /overview page Download PDF button.
+// ─────────────────────────────────────────────────────────────────────────
+
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+
+const ovStyles = StyleSheet.create({
+  page:     { fontFamily: 'Helvetica', fontSize: 8, padding: 28, color: '#111827', backgroundColor: '#ffffff' },
+  title:    { fontFamily: 'Helvetica-Bold', fontSize: 18, color: '#4F46E5', marginBottom: 4 },
+  subtitle: { fontSize: 9, color: '#6B7280', marginBottom: 16 },
+
+  headerRow:  { flexDirection: 'row', backgroundColor: '#F3F4F6', borderTopWidth: 1, borderTopColor: '#E5E7EB', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  bodyRow:    { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
+  totalsRow:  { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#E5E7EB', backgroundColor: '#EEF2FF' },
+
+  colCompany:    { width: 110, padding: '5 6', fontFamily: 'Helvetica-Bold', fontSize: 7.5, color: '#374151' },
+  colCompanyHdr: { width: 110, padding: '5 6', fontFamily: 'Helvetica-Bold', fontSize: 7, textTransform: 'uppercase', color: '#6B7280' },
+  colMonth:      { flex: 1, padding: '5 4', textAlign: 'right', fontSize: 7.5, color: '#374151' },
+  colMonthHdr:   { flex: 1, padding: '5 4', textAlign: 'center', fontFamily: 'Helvetica-Bold', fontSize: 7, textTransform: 'uppercase', color: '#6B7280' },
+  colTotal:      { width: 60, padding: '5 6', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8, color: '#111827' },
+  colTotalHdr:   { width: 60, padding: '5 6', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 7, textTransform: 'uppercase', color: '#6B7280' },
+  totalCell:     { fontFamily: 'Helvetica-Bold', color: '#3730A3' },
+
+  smallFooter:   { position: 'absolute', bottom: 16, left: 28, right: 28, fontSize: 7, color: '#9CA3AF', textAlign: 'right' },
+});
+
+interface OverviewRow {
+  companyName: string;
+  byMonth: Record<string, number>; // month name → total
+}
+
+interface OverviewData {
+  year:       number;
+  rows:       OverviewRow[];
+  monthTotals:Record<string, number>;
+  grandTotal: number;
+  generatedAt: Date;
+  invoiceCount: number;
+  companyCount: number;
+}
+
+function OverviewDoc({ data }: { data: OverviewData }) {
+  // Only render months that have at least one invoice in the year (keeps it readable).
+  const activeMonths = MONTHS_FULL.filter((m) => (data.monthTotals[m] ?? 0) > 0);
+  // Fallback: if no month has data, show first 3 to avoid an empty grid.
+  const months       = activeMonths.length > 0 ? activeMonths : MONTHS_FULL.slice(0, 3);
+
+  return (
+    <Document>
+      <Page size="LEGAL" orientation="landscape" style={ovStyles.page}>
+        <Text style={ovStyles.title}>Monthly Overview — {data.year}</Text>
+        <Text style={ovStyles.subtitle}>
+          {data.companyCount} companies · {data.invoiceCount} invoices · {formatCurrency(data.grandTotal)} invoiced ·
+          Generated {format(data.generatedAt, 'MMM d, yyyy')}
+        </Text>
+
+        {/* Header */}
+        <View style={ovStyles.headerRow}>
+          <Text style={ovStyles.colCompanyHdr}>Company</Text>
+          {months.map((m) => <Text key={m} style={ovStyles.colMonthHdr}>{m.slice(0, 3)}</Text>)}
+          <Text style={ovStyles.colTotalHdr}>Total</Text>
+        </View>
+
+        {/* Body */}
+        {data.rows.map((row, i) => {
+          const rowTotal = months.reduce((s, m) => s + (row.byMonth[m] ?? 0), 0);
+          if (rowTotal === 0) return null; // skip companies with no invoices this year
+          return (
+            <View key={i} style={ovStyles.bodyRow}>
+              <Text style={ovStyles.colCompany}>{row.companyName}</Text>
+              {months.map((m) => (
+                <Text key={m} style={ovStyles.colMonth}>
+                  {(row.byMonth[m] ?? 0) > 0 ? formatCurrency(row.byMonth[m]) : '—'}
+                </Text>
+              ))}
+              <Text style={ovStyles.colTotal}>{formatCurrency(rowTotal)}</Text>
+            </View>
+          );
+        })}
+
+        {/* Monthly totals */}
+        <View style={ovStyles.totalsRow}>
+          <Text style={[ovStyles.colCompany, ovStyles.totalCell]}>Monthly Total</Text>
+          {months.map((m) => (
+            <Text key={m} style={[ovStyles.colMonth, ovStyles.totalCell]}>{formatCurrency(data.monthTotals[m] ?? 0)}</Text>
+          ))}
+          <Text style={[ovStyles.colTotal, ovStyles.totalCell]}>{formatCurrency(data.grandTotal)}</Text>
+        </View>
+
+        <Text style={ovStyles.smallFooter} render={({ pageNumber, totalPages }) => `${SENDER.name} · ${data.year} Monthly Overview · Page ${pageNumber} of ${totalPages}`} fixed />
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderOverviewPDF(data: OverviewData): Promise<Buffer> {
+  return renderToBuffer(<OverviewDoc data={data} />) as Promise<Buffer>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Invoices List PDF — exports the visible invoice table on the /invoices page.
+// ─────────────────────────────────────────────────────────────────────────
+
+const ilStyles = StyleSheet.create({
+  page:        { fontFamily: 'Helvetica', fontSize: 9, padding: 30, color: '#111827', backgroundColor: '#ffffff' },
+  title:       { fontFamily: 'Helvetica-Bold', fontSize: 18, color: '#4F46E5', marginBottom: 4 },
+  subtitle:    { fontSize: 9, color: '#6B7280', marginBottom: 16 },
+
+  tableHeader: { flexDirection: 'row', backgroundColor: '#F3F4F6', padding: '6 4', borderTopWidth: 1, borderTopColor: '#E5E7EB', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  row:         { flexDirection: 'row', padding: '6 4', borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
+
+  hdrCell:     { fontFamily: 'Helvetica-Bold', fontSize: 7.5, textTransform: 'uppercase', color: '#6B7280' },
+  cell:        { fontSize: 8.5, color: '#374151' },
+
+  cInv:        { width: 50 },
+  cCo:         { flex: 1.4 },
+  cPeriod:     { width: 90 },
+  cStatus:     { width: 70 },
+  cDate:       { width: 70 },
+  cAmt:        { width: 80, textAlign: 'right' },
+
+  totalsRow:   { flexDirection: 'row', padding: '8 4', backgroundColor: '#EEF2FF', borderTopWidth: 1, borderTopColor: '#C7D2FE' },
+  totalLbl:    { fontFamily: 'Helvetica-Bold', fontSize: 9, color: '#3730A3' },
+  totalVal:    { fontFamily: 'Helvetica-Bold', fontSize: 9, color: '#3730A3', textAlign: 'right' },
+
+  smallFooter: { position: 'absolute', bottom: 16, left: 30, right: 30, fontSize: 7, color: '#9CA3AF', textAlign: 'right' },
+});
+
+export interface InvoiceListRow {
+  invoiceNumber: number;
+  companyName:   string;
+  month:         string;
+  year:          number;
+  status:        string;
+  dateSent:      string;
+  total:         number;
+}
+
+function InvoiceListDoc({ rows, filterLabel }: { rows: InvoiceListRow[]; filterLabel: string }) {
+  const total = rows.reduce((s, r) => s + r.total, 0);
+  const paid    = rows.filter(r => r.status === 'PAID').reduce((s, r) => s + r.total, 0);
+  const pending = rows.filter(r => r.status === 'PENDING').reduce((s, r) => s + r.total, 0);
+  const draft   = rows.filter(r => r.status === 'DRAFT').reduce((s, r) => s + r.total, 0);
+
+  return (
+    <Document>
+      <Page size="LETTER" orientation="landscape" style={ilStyles.page}>
+        <Text style={ilStyles.title}>Invoices Report</Text>
+        <Text style={ilStyles.subtitle}>
+          {filterLabel} · {rows.length} invoice{rows.length === 1 ? '' : 's'} · Total {formatCurrency(total)} (Paid {formatCurrency(paid)} · Pending {formatCurrency(pending)} · Draft {formatCurrency(draft)}) · Generated {format(new Date(), 'MMM d, yyyy')}
+        </Text>
+
+        {/* Header */}
+        <View style={ilStyles.tableHeader}>
+          <Text style={[ilStyles.hdrCell, ilStyles.cInv]}>Inv #</Text>
+          <Text style={[ilStyles.hdrCell, ilStyles.cCo]}>Company</Text>
+          <Text style={[ilStyles.hdrCell, ilStyles.cPeriod]}>Period</Text>
+          <Text style={[ilStyles.hdrCell, ilStyles.cStatus]}>Status</Text>
+          <Text style={[ilStyles.hdrCell, ilStyles.cDate]}>Date Sent</Text>
+          <Text style={[ilStyles.hdrCell, ilStyles.cAmt]}>Total</Text>
+        </View>
+
+        {/* Rows */}
+        {rows.map((r, i) => (
+          <View key={i} style={ilStyles.row}>
+            <Text style={[ilStyles.cell, ilStyles.cInv]}>#{r.invoiceNumber}</Text>
+            <Text style={[ilStyles.cell, ilStyles.cCo]}>{r.companyName}</Text>
+            <Text style={[ilStyles.cell, ilStyles.cPeriod]}>{r.month} {r.year}</Text>
+            <Text style={[ilStyles.cell, ilStyles.cStatus]}>{r.status}</Text>
+            <Text style={[ilStyles.cell, ilStyles.cDate]}>{r.dateSent || '—'}</Text>
+            <Text style={[ilStyles.cell, ilStyles.cAmt]}>{formatCurrency(r.total)}</Text>
+          </View>
+        ))}
+
+        {/* Total row */}
+        <View style={ilStyles.totalsRow}>
+          <Text style={[ilStyles.totalLbl, ilStyles.cInv]}> </Text>
+          <Text style={[ilStyles.totalLbl, ilStyles.cCo]}>TOTAL</Text>
+          <Text style={[ilStyles.totalLbl, ilStyles.cPeriod]}> </Text>
+          <Text style={[ilStyles.totalLbl, ilStyles.cStatus]}> </Text>
+          <Text style={[ilStyles.totalLbl, ilStyles.cDate]}> </Text>
+          <Text style={[ilStyles.totalVal, ilStyles.cAmt]}>{formatCurrency(total)}</Text>
+        </View>
+
+        <Text style={ilStyles.smallFooter} render={({ pageNumber, totalPages }) => `${SENDER.name} · Invoices Report · Page ${pageNumber} of ${totalPages}`} fixed />
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderInvoiceListPDF(rows: InvoiceListRow[], filterLabel: string): Promise<Buffer> {
+  return renderToBuffer(<InvoiceListDoc rows={rows} filterLabel={filterLabel} />) as Promise<Buffer>;
+}

@@ -175,7 +175,28 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
         <PageHeader
           title="Invoices"
           description={`${sorted.length === invoices.length ? invoices.length : `${sorted.length} of ${invoices.length}`} invoices`}
-          action={<Button variant="primary" onClick={() => { setGenResult(null); setShowGenerate(true); }}>+ Generate Invoice</Button>}
+          action={
+            <div className="flex items-center gap-2">
+              <a
+                href={`/api/invoices/export?${new URLSearchParams({
+                  ...(filterMonth   ? { month: filterMonth }                 : {}),
+                  ...(filterYear    ? { year: String(filterYear) }           : {}),
+                  ...(filterStatus && filterStatus !== 'UNPAID' ? { status: filterStatus } : {}),
+                  ...(filterCompany ? { companyId: filterCompany }           : {}),
+                }).toString()}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                title="Download a PDF of the currently-filtered invoices"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download PDF
+              </a>
+              <Button variant="primary" onClick={() => { setGenResult(null); setShowGenerate(true); }}>+ Generate Invoice</Button>
+            </div>
+          }
         />
 
         {/* Summary cards */}

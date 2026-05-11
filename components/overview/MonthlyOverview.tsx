@@ -112,12 +112,25 @@ export default function MonthlyOverview({
         title="Monthly Overview"
         description={`${year} · ${companies.length} companies · ${yearInvoices.length} invoices · ${formatCurrency(grandTotal)} invoiced`}
         action={
-          flaggedCount > 0 ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 ring-1 ring-red-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-              {flaggedCount} flagged
-            </span>
-          ) : undefined
+          <div className="flex items-center gap-3">
+            {flaggedCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 ring-1 ring-red-200">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                {flaggedCount} flagged
+              </span>
+            )}
+            <a
+              href={`/api/overview/pdf?year=${year}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download PDF
+            </a>
+          </div>
         }
       />
 
