@@ -46,6 +46,10 @@ interface ResultEntry {
   duplicatesSkipped?: number;
   sentAs?:          'sent' | 'draft';
   error?:           string;
+  // When sendMode='send' but the SMTP send fails, the invoice still gets
+  // created + marked PENDING — we just couldn't deliver the email. This
+  // surfaces that to the office so they know to fix SMTP / retry resend.
+  emailError?:      string;
 }
 
 export async function POST(request: NextRequest) {
@@ -157,18 +161,26 @@ export async function POST(request: NextRequest) {
       }
 
       // Draft mode: PDF is rendered and the invoice stays DRAFT, no email.
-      // Send mode: try email (non-fatal if SMTP stub), then flip to PENDING.
+      // Send mode: try email, then flip to PENDING regardless (so the office
+      // can resend manually if email failed — the invoice still exists).
+      let emailError: string | undefined;
       if (group.sendMode === 'send') {
         try {
           await sendInvoiceEmail({
-            to: invoice.company.email,
+            to:            invoice.company.email,
             invoiceNumber,
             month,
             year,
+            total:         grandTotal,
+            companyName:   invoice.company.companyName,
             pdfBuffer,
           });
-        } catch {
-          // Email is stubbed — non-fatal, continue to mark PENDING
+        } catch (err: any) {
+          // Capture the SMTP error so the office sees it in results instead
+          // of silently believing the email went out. This is what surfaced
+          // the Microsoft 365 535 5.7.139 auth failure to Yash.
+          emailError = typeof err?.message === 'string' ? err.message : 'Email failed';
+          console.error('taxicaller import: sendInvoiceEmail failed', group.companyId, err);
         }
 
         await prisma.invoice.update({
@@ -187,6 +199,7 @@ export async function POST(request: NextRequest) {
         flagged,
         duplicatesSkipped,
         sentAs:           group.sendMode === 'draft' ? 'draft' : 'sent',
+        emailError,
       });
 
     } catch (err: any) {

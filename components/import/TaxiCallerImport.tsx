@@ -73,6 +73,7 @@ interface ImportResult {
   duplicatesSkipped?: number;
   sentAs?: 'sent' | 'draft';  // distinguishes emailed vs. kept as draft
   error?: string;
+  emailError?: string;        // SMTP failure message when send failed but invoice was still created
 }
 
 type WizardStep = 'upload' | 'preview' | 'results';
@@ -271,6 +272,45 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
           ),
         }
       ),
+    }));
+  }
+
+  // Yash: "I need add and delete option here individually ride because if I
+  // can not able to resend email then this will help". Lets the office prune
+  // a noisy import (e.g. cancelled rides) or sneak in a missed ride before
+  // generating the invoices — without bouncing through the rides page.
+
+  function deleteRow(accountId: string, rowIndex: number) {
+    setWizard((w) => ({
+      ...w,
+      groups: w.groups.map((g) =>
+        g.accountId !== accountId ? g : { ...g, rows: g.rows.filter((r) => r.rowIndex !== rowIndex) }
+      ),
+    }));
+  }
+
+  function addRow(accountId: string) {
+    setWizard((w) => ({
+      ...w,
+      groups: w.groups.map((g) => {
+        if (g.accountId !== accountId) return g;
+        // Negative rowIndex sentinel keeps these distinguishable from
+        // imported rows; the import API doesn't care about rowIndex.
+        const minIdx = g.rows.reduce((m, r) => Math.min(m, r.rowIndex), 0);
+        const newRow: ParsedRideRow = {
+          rowIndex:        minIdx - 1,
+          jobId:           '',
+          dateTime:        '',
+          passenger:       '',
+          customerPhone:   '',
+          pickupLocation:  '',
+          dropoffLocation: '',
+          vehicleNumber:   '',
+          driver:          '',
+          amount:          0,
+        };
+        return { ...g, rows: [...g.rows, newRow] };
+      }),
     }));
   }
 
@@ -604,8 +644,8 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50">
-                        {['Date/Time', 'Passenger', 'Phone', 'Pickup', 'Dropoff', 'Cab #', 'Driver', 'Payable'].map((h) => (
-                          <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        {['Date/Time', 'Passenger', 'Phone', 'Pickup', 'Dropoff', 'Cab #', 'Driver', 'Payable', ''].map((h, i) => (
+                          <th key={i} className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
                             {h}
                           </th>
                         ))}
@@ -681,13 +721,33 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
                               className="w-24 rounded-lg border border-gray-200 px-2 py-1 text-right text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
                             />
                           </td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => deleteRow(group.accountId, r.rowIndex)}
+                              title="Remove this ride from the import"
+                              className="rounded-md border border-transparent px-2 py-1 text-xs font-medium text-red-500 hover:border-red-200 hover:bg-red-50"
+                            >
+                              ✕
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="bg-gray-50 border-t border-gray-100">
-                        <td colSpan={7} className="px-4 py-2.5 text-xs font-semibold text-gray-500 text-right">Subtotal</td>
+                        <td colSpan={2} className="px-4 py-2">
+                          <button
+                            type="button"
+                            onClick={() => addRow(group.accountId)}
+                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                          >
+                            + Add ride
+                          </button>
+                        </td>
+                        <td colSpan={5} className="px-4 py-2.5 text-xs font-semibold text-gray-500 text-right">Subtotal</td>
                         <td className="px-4 py-2.5 text-sm font-bold text-gray-900">{formatCurrency(subtotal)}</td>
+                        <td></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -793,6 +853,13 @@ export default function TaxiCallerImport({ companies }: { companies: Company[] }
               )}
               {r.status === 'error' && (
                 <p className="mt-0.5 text-xs text-red-600">{r.error}</p>
+              )}
+              {/* Surface SMTP send failures from import — invoice still
+                  exists, just the email didn't reach the recipient. */}
+              {r.status === 'success' && r.emailError && (
+                <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 ring-1 ring-amber-200">
+                  ⚠ Invoice created, but email could not be sent: <span className="font-mono">{r.emailError}</span>
+                </p>
               )}
             </div>
 
