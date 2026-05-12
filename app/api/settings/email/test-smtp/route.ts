@@ -1,28 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 /**
  * POST /api/settings/email/test-smtp
  *   { recipient: "you@example.com" }
  *
- * Tries to (1) connect to the configured SMTP server and verify the
- * credentials, then (2) send a tiny test email. Returns a structured
- * result with `step`, `success`, and `error` so the UI can show a
- * specific failure point (connect vs send) and give the office a
- * clear diagnostic without going through the whole invoice flow.
+ * Sends a tiny test email via Resend. Returns a structured result with
+ * `step`, `success`, and `error` so the UI can show a specific failure.
+ *
+ * Endpoint name is "test-smtp" for legacy reasons — backend was switched
+ * from Microsoft 365 SMTP to Resend on 2026-05-12.
  */
 
 const schema = z.object({
   recipient: z.string().email('Recipient must be a valid email'),
 });
 
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp.office365.com';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587');
-const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : false;
-const SMTP_USER = process.env.SMTP_USER || 'accountspayable@vetstaxi.ca';
-const SMTP_PASS = process.env.SMTP_PASS || 'Vetstaxi@1';
-const EMAIL_FROM_DEFAULT = process.env.EMAIL_FROM || SMTP_USER;
+const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_YP5qupYQ_MaGt3YSizKiL8GJJMYn3nnCo';
+const RESEND_FROM    = process.env.RESEND_FROM    || 'Vets Taxi <onboarding@resend.dev>';
+const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || 'accountspayable@vetstaxi.ca';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -31,55 +28,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Public config — no API key — so the UI can show what's being used.
   const config = {
-    host:   SMTP_HOST,
-    port:   SMTP_PORT,
-    secure: SMTP_SECURE,
-    user:   SMTP_USER,
-    from:   EMAIL_FROM_DEFAULT,
+    provider: 'Resend',
+    from:     RESEND_FROM,
+    replyTo:  EMAIL_REPLY_TO,
   };
 
-  const transporter = nodemailer.createTransport({
-    host:   SMTP_HOST,
-    port:   SMTP_PORT,
-    secure: SMTP_SECURE,
-    auth:   { user: SMTP_USER, pass: SMTP_PASS },
-  });
-
-  // Step 1: verify the connection + auth
-  try {
-    await transporter.verify();
-  } catch (err: any) {
+  if (!RESEND_API_KEY) {
     return NextResponse.json({
       step:    'connect',
       success: false,
       config,
-      error:   typeof err?.message === 'string' ? err.message : 'Unknown SMTP connection error',
+      error:   'RESEND_API_KEY is not configured on the server.',
     });
   }
 
-  // Step 2: send a tiny test email
   try {
-    await transporter.sendMail({
-      from:    EMAIL_FROM_DEFAULT,
-      to:      parsed.data.recipient,
-      subject: 'TaxiRide — SMTP test',
-      text:    'This is a test message from your TaxiRide invoicing app. If you received it, SMTP is working correctly.',
-      html:    '<p>This is a test message from your TaxiRide invoicing app.</p><p>If you received it, <strong>SMTP is working correctly</strong>.</p>',
+    const resend = new Resend(RESEND_API_KEY);
+    const { data, error } = await resend.emails.send({
+      from:     RESEND_FROM,
+      to:       parsed.data.recipient,
+      replyTo:  EMAIL_REPLY_TO,
+      subject:  'TaxiRide — email test',
+      text:     'This is a test message from your TaxiRide invoicing app. If you received it, email delivery is working correctly.',
+      html:     '<p>This is a test message from your TaxiRide invoicing app.</p><p>If you received it, <strong>email delivery is working correctly</strong>.</p>',
+    });
+    if (error) {
+      const msg = (error as any)?.message || (error as any)?.name || JSON.stringify(error);
+      return NextResponse.json({
+        step:    'send',
+        success: false,
+        config,
+        error:   `Resend: ${msg}`,
+      });
+    }
+    return NextResponse.json({
+      step:    'send',
+      success: true,
+      config,
+      error:   null,
+      emailId: data?.id,
     });
   } catch (err: any) {
     return NextResponse.json({
       step:    'send',
       success: false,
       config,
-      error:   typeof err?.message === 'string' ? err.message : 'Unknown SMTP send error',
+      error:   typeof err?.message === 'string' ? err.message : 'Unknown error sending test email',
     });
   }
-
-  return NextResponse.json({
-    step:    'send',
-    success: true,
-    config,
-    error:   null,
-  });
 }

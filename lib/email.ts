@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { prisma } from './db';
 
 function formatCurrencyEmail(amount: number): string {
@@ -139,32 +139,77 @@ export function renderInvoiceEmailHTML(params: {
   return { subject, html, text };
 }
 
-// Hardcoded SMTP config — Microsoft 365 mailbox for Vetstaxi.
-// Env vars still override in dev so a local .env can point elsewhere.
-const SMTP_HOST   = process.env.SMTP_HOST   || 'smtp.office365.com';
-const SMTP_PORT   = parseInt(process.env.SMTP_PORT || '587');
-const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : false;
-const SMTP_USER   = process.env.SMTP_USER   || 'accountspayable@vetstaxi.ca';
-const SMTP_PASS   = process.env.SMTP_PASS   || 'Vetstaxi@1';
-const EMAIL_FROM_DEFAULT = process.env.EMAIL_FROM || SMTP_USER;
+// ─────────────────────────────────────────────────────────────────────────
+// Email backend: Resend (https://resend.com)
+//
+// Previously we used Nodemailer + Microsoft 365 SMTP, but Microsoft kept
+// rejecting the login (535 5.7.139 — Authenticated SMTP disabled at tenant
+// level) and the office couldn't get past it. Resend has a 3,000-email/mo
+// free tier and a single API key that just works.
+//
+// IMPORTANT: until the sender domain (vetstaxi.ca) is verified on Resend,
+// emails must be sent FROM `onboarding@resend.dev` — Resend rejects any
+// other from-address. Setting RESEND_FROM in env to a verified address
+// is how the office upgrades later without a code change.
+// ─────────────────────────────────────────────────────────────────────────
+const RESEND_API_KEY  = process.env.RESEND_API_KEY  || 're_YP5qupYQ_MaGt3YSizKiL8GJJMYn3nnCo';
+// Default From: Resend's onboarding sender. Reads as "Vets Taxi <onboarding@resend.dev>".
+// Once vetstaxi.ca is verified on Resend, set RESEND_FROM=Vets Taxi <accountspayable@vetstaxi.ca>
+const RESEND_FROM     = process.env.RESEND_FROM     || 'Vets Taxi <onboarding@resend.dev>';
+// Replies go to the office mailbox regardless of who the email is sent FROM.
+const EMAIL_REPLY_TO  = process.env.EMAIL_REPLY_TO  || 'accountspayable@vetstaxi.ca';
 
-function smtpConfigured(): boolean {
-  return !!(SMTP_HOST && SMTP_PASS);
+function resendConfigured(): boolean {
+  return !!RESEND_API_KEY;
 }
 
-function getTransport() {
-  return nodemailer.createTransport({
-    host:   SMTP_HOST,
-    port:   SMTP_PORT,
-    secure: SMTP_SECURE,
-    auth:   { user: SMTP_USER, pass: SMTP_PASS },
+let _resendClient: Resend | null = null;
+function getResend(): Resend {
+  if (!_resendClient) _resendClient = new Resend(RESEND_API_KEY);
+  return _resendClient;
+}
+
+/**
+ * Throw on Resend error — the caller's try/catch turns this into the
+ * "emailError" surfaced in the UI, so the office sees a real message
+ * instead of a silent success.
+ */
+async function sendViaResend(payload: {
+  from:        string;
+  to:          string;
+  replyTo?:    string;
+  subject:     string;
+  html:        string;
+  text:        string;
+  filename:    string;
+  pdfBuffer:   Buffer;
+}): Promise<void> {
+  const { data, error } = await getResend().emails.send({
+    from:     payload.from,
+    to:       payload.to,
+    replyTo:  payload.replyTo,
+    subject:  payload.subject,
+    html:     payload.html,
+    text:     payload.text,
+    attachments: [{
+      filename: payload.filename,
+      content:  payload.pdfBuffer,
+    }],
   });
+  if (error) {
+    // Resend returns structured errors like { name: 'validation_error', message: '...' }
+    const msg = (error as any)?.message || (error as any)?.name || JSON.stringify(error);
+    throw new Error(`Resend: ${msg}`);
+  }
+  if (!data?.id) {
+    throw new Error('Resend: no email id returned');
+  }
 }
 
 /**
  * Generic attachment-email sender. Used for driver reports / broker statements
  * and any other PDF-by-email flow. `from` override is optional and defaults to
- * the configured EMAIL_FROM / SMTP_USER.
+ * the configured RESEND_FROM.
  */
 export async function sendEmailWithPDF(params: {
   to:          string;
@@ -175,22 +220,19 @@ export async function sendEmailWithPDF(params: {
   pdfBuffer:   Buffer;
   pdfFilename: string;
 }): Promise<void> {
-  if (!smtpConfigured()) {
-    console.log(`[EMAIL] SMTP not configured — skipping send to ${params.to} (${params.subject})`);
+  if (!resendConfigured()) {
+    console.log(`[EMAIL] Resend not configured — skipping send to ${params.to} (${params.subject})`);
     return;
   }
-  const transporter = getTransport();
-  await transporter.sendMail({
-    from:    params.from || EMAIL_FROM_DEFAULT,
-    to:      params.to,
-    subject: params.subject,
-    text:    params.text,
-    html:    params.html,
-    attachments: [{
-      filename:    params.pdfFilename,
-      content:     params.pdfBuffer,
-      contentType: 'application/pdf',
-    }],
+  await sendViaResend({
+    from:      params.from || RESEND_FROM,
+    to:        params.to,
+    replyTo:   EMAIL_REPLY_TO,
+    subject:   params.subject,
+    html:      params.html,
+    text:      params.text,
+    filename:  params.pdfFilename,
+    pdfBuffer: params.pdfBuffer,
   });
 }
 
@@ -205,10 +247,9 @@ export async function sendInvoiceEmail(params: {
   dueDate?: string;
   companyName?: string;
 }): Promise<void> {
-  // Guard: if SMTP credentials aren't configured yet, log and skip silently
-  if (!smtpConfigured()) {
+  if (!resendConfigured()) {
     console.log(
-      `[EMAIL] SMTP not configured — skipping send for Invoice #${params.invoiceNumber} to ${params.to}`
+      `[EMAIL] Resend not configured — skipping send for Invoice #${params.invoiceNumber} to ${params.to}`
     );
     return;
   }
@@ -226,17 +267,14 @@ export async function sendInvoiceEmail(params: {
     },
   });
 
-  const transporter = getTransport();
-  await transporter.sendMail({
-    from:    params.from || EMAIL_FROM_DEFAULT,
-    to:      params.to,
+  await sendViaResend({
+    from:      params.from || RESEND_FROM,
+    to:        params.to,
+    replyTo:   EMAIL_REPLY_TO,
     subject,
-    text,
     html,
-    attachments: [{
-      filename:    `Invoice-${params.invoiceNumber}-${params.month}-${params.year}.pdf`,
-      content:     params.pdfBuffer,
-      contentType: 'application/pdf',
-    }],
+    text,
+    filename:  `Invoice-${params.invoiceNumber}-${params.month}-${params.year}.pdf`,
+    pdfBuffer: params.pdfBuffer,
   });
 }

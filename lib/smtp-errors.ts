@@ -71,12 +71,43 @@ const PATTERNS: Array<{
     cause:  'The email server did not respond in time, often a temporary network glitch.',
     action: 'Wait a moment and click Resend. If it keeps timing out, the SMTP server may be down.',
   },
-  // SMTP not configured (our own guard)
+  // SMTP not configured (our own guard) — pre-Resend
   {
     match:  /SMTP not configured|SMTP_HOST/i,
     title:  'Email is not set up on the server',
     cause:  'No SMTP credentials are configured for this deployment.',
     action: 'Set the SMTP_HOST / SMTP_USER / SMTP_PASS environment variables on Vercel and redeploy.',
+  },
+  // ── Resend (https://resend.com) ─────────────────────────────────────────
+  // Hit when the From address is on a domain that hasn't been verified yet.
+  // Brand-new Resend accounts can only send FROM onboarding@resend.dev.
+  {
+    match:  /from.*verified|verify a domain|domain.*not verified|domain.*pending/i,
+    title:  'The "From" address has not been verified yet',
+    cause:  'Resend only allows sending FROM addresses on a domain you have verified ownership of. New accounts can use onboarding@resend.dev only.',
+    action: 'Go to resend.com → Domains → Add Domain → verify vetstaxi.ca by adding the DNS records. Once verified, set RESEND_FROM on Vercel to "Vets Taxi <accountspayable@vetstaxi.ca>".',
+  },
+  // Hit when the API key is wrong / missing / revoked.
+  {
+    match:  /API key|invalid_api_key|missing_api_key|unauthorized|401/i,
+    title:  'The Resend API key is invalid or missing',
+    cause:  'The Resend API key on the server has been revoked, mistyped, or not set.',
+    action: 'Generate a new key at resend.com → API Keys → Create API Key, then set it as RESEND_API_KEY on Vercel and redeploy.',
+  },
+  // Hit when Resend rate-limits.
+  {
+    match:  /rate.?limit|too many requests|429/i,
+    title:  'Too many emails sent in a short time',
+    cause:  'Resend has temporarily throttled the account because of the volume.',
+    action: 'Wait a minute and try again. If this happens often, the free tier (3,000/month, 100/day) may need to be upgraded.',
+  },
+  // Generic Resend failure — surfaced when the SDK returns an error with no
+  // recognisable code or message.
+  {
+    match:  /Resend:/i,
+    title:  'Email service (Resend) rejected the request',
+    cause:  'Resend returned an error when trying to send this email.',
+    action: 'Check the technical details below. If the message mentions the From address or the domain, the fix is in the Resend dashboard. Otherwise the API key may have been revoked.',
   },
 ];
 

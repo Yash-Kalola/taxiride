@@ -7,17 +7,17 @@ import EmailErrorBanner from '@/components/email/EmailErrorBanner';
 interface TestResult {
   step:    'connect' | 'send';
   success: boolean;
-  config:  { host: string; port: number; secure: boolean; user: string; from: string };
+  // Resend config shape — we switched from Nodemailer/SMTP on 2026-05-12.
+  config:  { provider: string; from: string; replyTo: string };
   error:   string | null;
+  emailId?: string;
 }
 
 /**
- * Diagnostic widget for verifying SMTP credentials. Connects to the
- * configured SMTP server, authenticates, and (if successful) sends a
- * one-line test email to a recipient the user types in. Shows a
- * specific error at the failure step (connect vs. send), with the
- * friendly EmailErrorBanner translating Microsoft 365 / nodemailer
- * errors into plain-English next steps.
+ * Diagnostic widget for verifying email delivery. Sends a one-line test
+ * email via Resend to a recipient the user types in. Shows a specific
+ * error if the send fails, with the friendly EmailErrorBanner translating
+ * common provider errors into plain-English next steps.
  */
 export default function SmtpTestClient() {
   const [recipient, setRecipient] = useState('');
@@ -58,10 +58,10 @@ export default function SmtpTestClient() {
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">SMTP Diagnostic</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Email Diagnostic</h3>
           <p className="mt-1 text-xs text-gray-500">
-            Verify the email server credentials and send a one-line test email.
-            Use this to check whether invoices will deliver before sending one.
+            Send a one-line test email through the email service (Resend). Use this to check
+            whether invoice emails will deliver before sending one.
           </p>
         </div>
       </div>
@@ -76,7 +76,7 @@ export default function SmtpTestClient() {
           hint="Use any email you can check — e.g. your own inbox."
         />
         <Button variant="primary" onClick={runTest} disabled={testing || !recipient}>
-          {testing ? 'Testing…' : 'Run SMTP test'}
+          {testing ? 'Sending…' : 'Send test email'}
         </Button>
       </div>
 
@@ -91,32 +91,30 @@ export default function SmtpTestClient() {
           {/* Status banner */}
           {result.success ? (
             <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-200">
-              <p className="font-semibold">✓ SMTP is working</p>
+              <p className="font-semibold">✓ Email is working</p>
               <p className="mt-0.5 text-emerald-700">
-                Connected to {result.config.host}:{result.config.port} as {result.config.user} and delivered the test email to <strong>{recipient}</strong>. Check that inbox to confirm.
+                Delivered the test email via {result.config.provider} to <strong>{recipient}</strong>. Check that inbox to confirm.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Failed at: {result.step === 'connect' ? 'Server connection / authentication' : 'Sending email'}
+                Failed at: {result.step === 'connect' ? 'Configuration / authentication' : 'Sending email'}
               </p>
               <EmailErrorBanner rawError={result.error} />
             </div>
           )}
 
-          {/* Active config (no password — just the public bits) */}
+          {/* Active config (no API key — just the public bits) */}
           <details className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-            <summary className="cursor-pointer font-medium text-gray-700">Current SMTP configuration</summary>
+            <summary className="cursor-pointer font-medium text-gray-700">Current email configuration</summary>
             <dl className="mt-2 grid grid-cols-[120px_1fr] gap-y-1 font-mono">
-              <dt className="text-gray-400">Host</dt>           <dd>{result.config.host}</dd>
-              <dt className="text-gray-400">Port</dt>           <dd>{result.config.port}</dd>
-              <dt className="text-gray-400">Secure (TLS)</dt>   <dd>{String(result.config.secure)}</dd>
-              <dt className="text-gray-400">Username</dt>       <dd>{result.config.user}</dd>
+              <dt className="text-gray-400">Provider</dt>       <dd>{result.config.provider}</dd>
               <dt className="text-gray-400">Sends as (From)</dt><dd>{result.config.from}</dd>
+              <dt className="text-gray-400">Reply-To</dt>       <dd>{result.config.replyTo}</dd>
             </dl>
             <p className="mt-2 text-gray-500">
-              These come from environment variables (<code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_SECURE</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code>, <code>EMAIL_FROM</code>) on the deploy. Update them in Vercel → Settings → Environment Variables.
+              These come from environment variables (<code>RESEND_API_KEY</code>, <code>RESEND_FROM</code>, <code>EMAIL_REPLY_TO</code>) on the deploy. Update them in Vercel → Settings → Environment Variables. Until <code>vetstaxi.ca</code> is verified on Resend, the <strong>From</strong> address must be <code>onboarding@resend.dev</code>.
             </p>
           </details>
         </div>
