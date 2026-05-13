@@ -15,6 +15,7 @@ interface Invoice {
   amountPreTax: number; hst: number; total: number; dateSent: string; dueDate: string;
   status: string; verified: boolean; flagged: boolean;
   paymentMethod: string | null; paymentRef: string;
+  notes: string;
   company: { companyName: string; accountId: string };
 }
 
@@ -278,7 +279,7 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                   >
                     Amount<SortIcon active={sortKey === 'total'} dir={sortDir} />
                   </th>
-                  {['Period', 'Date Sent', 'Due Date', 'Status', 'Actions'].map((h) => (
+                  {['Period', 'Date Sent', 'Due Date', 'Status', 'Notes', 'Actions'].map((h) => (
                     <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                   ))}
                 </tr>
@@ -319,6 +320,26 @@ export default function InvoicesClient({ initialInvoices, companies }: { initial
                             {PAYMENT_METHODS.find(p => p.value === inv.paymentMethod)?.label ?? inv.paymentMethod}
                             {inv.paymentRef ? ` #${inv.paymentRef}` : ''}
                           </span>
+                        )}
+                      </td>
+                      {/* Notes — truncated to keep the row compact; the full
+                          text shows in a native tooltip on hover, and clicking
+                          jumps to the detail page where it can be edited. */}
+                      <td className="px-4 py-3.5 max-w-[200px]">
+                        {inv.notes ? (
+                          <Link href={`/invoices/${inv.id}`} className="block">
+                            <span
+                              title={inv.notes}
+                              className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100 max-w-full"
+                            >
+                              <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span className="truncate">{inv.notes}</span>
+                            </span>
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3.5">
