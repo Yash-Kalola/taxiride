@@ -95,7 +95,7 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Company', 'Account ID', 'Email', 'PO #', 'Rides', 'Invoices', ''].map((h) => (
+                {['Company', 'Account ID', 'Email', 'PO #', 'Rides', 'Invoices', 'Notes', ''].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">{h}</th>
                 ))}
               </tr>
@@ -112,6 +112,25 @@ export default function CompaniesClient({ initialCompanies }: { initialCompanies
                   <td className="px-5 py-4 text-sm text-gray-600">{c.poNumber || '—'}</td>
                   <td className="px-5 py-4 text-sm text-gray-700 font-medium">{c._count.rides}</td>
                   <td className="px-5 py-4 text-sm text-gray-700 font-medium">{c._count.invoices}</td>
+                  {/* Internal note — truncated chip with full text in tooltip.
+                      Click opens the edit modal so the note can be updated. */}
+                  <td className="px-5 py-4 max-w-[220px]">
+                    {c.notes ? (
+                      <button
+                        type="button"
+                        onClick={() => openEdit(c)}
+                        title={c.notes}
+                        className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100 max-w-full"
+                      >
+                        <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="truncate">{c.notes}</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>Edit</Button>

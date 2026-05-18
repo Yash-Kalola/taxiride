@@ -2,19 +2,26 @@
  * Date parsing helpers for user-entered dates.
  *
  * WHY THIS EXISTS:
- *   `new Date("2026-04-10")` parses as UTC midnight, which in Eastern Time
- *   (UTC-5 / UTC-4) shifts to April 9 at 19:00 or 20:00 local. Subsequent
- *   `.getMonth()` / `.getDate()` calls then read "April 9" — so a daily sheet
- *   the driver dated April 10 is stored, reported, and grouped as April 9.
+ *   `new Date("2026-04-10")` parses as UTC midnight. On Vercel the server
+ *   runs in UTC, so storing "2026-05-04" via a naive constructor saved it
+ *   as 2026-05-04T00:00:00Z. When the office (in EDT, UTC-4) read it back
+ *   the browser rendered it as May 3 at 8pm, and `format(d, 'MMM d')`
+ *   showed "May 3" — but the edit form, which split the raw ISO string at
+ *   "T", showed "2026-05-04". User picks May 4 → row shows May 3.
  *
- *   Use `parseLocalDate(str)` whenever the string came from a date-only input
- *   (HTML `<input type="date">` or a "YYYY-MM-DD" field). For full ISO
- *   timestamps from the database or API, keep using `new Date(str)` directly.
+ *   Fix: anchor user-entered date-only values to NOON UTC of the intended
+ *   calendar day. Noon UTC stays inside the same calendar day in every
+ *   IANA timezone from UTC-11 to UTC+12, so display, edit form, and the
+ *   server's month/year extraction (Vercel is in UTC) all stay aligned.
+ *
+ *   Use `parseLocalDate(str)` whenever the string came from a date-only
+ *   input (HTML `<input type="date">` or a "YYYY-MM-DD" field). For full
+ *   ISO timestamps from the database or API, keep using `new Date(str)`.
  */
 
 /**
- * Parse a "YYYY-MM-DD" string as midnight local time. Preserves the calendar
- * day the user selected regardless of the server's timezone.
+ * Parse a "YYYY-MM-DD" string as noon UTC of that calendar day. Preserves
+ * the calendar day the user selected in every timezone the app gets used in.
  *
  * If the string already contains time info (e.g. a full ISO timestamp), it's
  * delegated to the standard Date constructor.
@@ -26,11 +33,11 @@ export function parseLocalDate(input: string | null | undefined): Date | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  // Date-only YYYY-MM-DD — build with local TZ constructor.
+  // Date-only YYYY-MM-DD — anchor at noon UTC to avoid timezone day-shifting.
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
   if (dateOnly) {
     const [, y, m, d] = dateOnly;
-    const dt = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+    const dt = new Date(Date.UTC(parseInt(y), parseInt(m) - 1, parseInt(d), 12, 0, 0));
     return isNaN(dt.getTime()) ? null : dt;
   }
 
