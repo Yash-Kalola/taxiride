@@ -97,7 +97,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   } catch (err: any) {
     if (err?.code === 'P2002') {
       return NextResponse.json(
-        { error: 'A daily sheet for this driver, date and shift already exists.' },
+        { error: 'A daily sheet for this driver, date and shift already exists — open the existing sheet in the table below to edit it instead of adding a new one.' },
         { status: 409 }
       );
     }

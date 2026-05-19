@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     if (err?.code === 'P2002') {
       return NextResponse.json(
-        { error: 'One or more sheets duplicate an existing (driver, date, shift) entry.' },
+        { error: 'One or more sheets duplicate an existing (driver, date, shift) entry. Edit the existing sheets instead of adding a new batch with the same dates.' },
         { status: 409 }
       );
     }

@@ -43,8 +43,18 @@ interface Driver {
   assignments: Assignment[]; dailySheets: DailySheet[]; payouts: Payout[];
 }
 
+// Use the user's LOCAL today, not UTC today — otherwise the office in EDT
+// loading the page after 8pm sees tomorrow's UTC date pre-filled in the form.
+function localTodayString(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 const EMPTY_SHEET = {
-  date:                  new Date().toISOString().split('T')[0],
+  date:                  localTodayString(),
   shift:                 'MORNING' as 'MORNING' | 'EVENING',
   vehicleNumber:         '',
   grossEarnings:         '',
